@@ -1,0 +1,115 @@
+{
+  "name": "prabha",
+  "displayName": "PRABHA \u2014 Turbo C graphics.h in VS Code",
+  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code \u2014 complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox.",
+  "version": "3.1.0",
+  "publisher": "KANAKPRABHAKAR",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "turbo c",
+    "graphics.h",
+    "conio.h",
+    "bgi",
+    "borland",
+    "dos",
+    "graphics"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kanak234/prabha"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:c",
+    "onLanguage:cpp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "prabha.run",
+        "title": "PRABHA: Run graphics.h Program",
+        "icon": "$(play)"
+      },
+      {
+        "command": "prabha.stop",
+        "title": "PRABHA: Stop Program"
+      },
+      {
+        "command": "prabha.showOutput",
+        "title": "PRABHA: Show Program Output"
+      },
+      {
+        "command": "prabha.openExample",
+        "title": "PRABHA: Open Example\u2026"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "prabha.run",
+          "when": "resourceExtname == .c || resourceExtname == .cpp",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "prabha.run",
+          "when": "resourceExtname == .c || resourceExtname == .cpp",
+          "group": "prabha@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "prabha.run",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "PRABHA",
+      "properties": {
+        "prabha.cCompiler": {
+          "type": "string",
+          "default": "gcc",
+          "description": "C compiler used for .c files and the PRABHA runtime."
+        },
+        "prabha.cppCompiler": {
+          "type": "string",
+          "default": "g++",
+          "description": "C++ compiler used for .cpp files."
+        },
+        "prabha.extraFlags": {
+          "type": "string",
+          "default": "",
+          "description": "Extra flags appended to the compile command."
+        },
+        "prabha.scale": {
+          "type": "number",
+          "default": 1.5,
+          "description": "Screen scale of the 640x480 panel (1 = actual size)."
+        },
+        "prabha.keepPanelOpenOnExit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the last frame on screen after the program exits."
+        },
+        "prabha.turboCppCompatibility": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Run classic **Turbo C++ / Borland C++** programs unchanged on your modern compiler. When on, `#include <iostream.h>`, unqualified `cout`/`cin`, and `void main()` all work without editing your source. Turn off if you only write standard modern C++ and want strict compilation."
+        }
+      }
+    }
+  }
+}
