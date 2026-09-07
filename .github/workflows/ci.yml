@@ -1,0 +1,44 @@
+name: CI
+
+# Validate PRABHA's JavaScript entry point and its repository test harness when present.
+# This is deliberately runtime-light: graphics and compiler integration require a
+# developer workstation and are not safe to fake on a generic CI runner.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Run the explicit repository test harness if it exists.
+      - name: Run tests
+        shell: bash
+        run: |
+          if [ -f test/run-tests.js ]; then
+            node test/run-tests.js
+          else
+            echo "No test harness found; continuing with syntax validation."
+          fi
+
+      # Syntax validation is dependency-free and catches parser-level regressions
+      # without launching the VS Code extension runtime.
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          node --check extension.js
+          find . -maxdepth 2 -type f -name '*.js' -not -path './node_modules/*' -print0 |
+            xargs -0 -r -n1 node --check
