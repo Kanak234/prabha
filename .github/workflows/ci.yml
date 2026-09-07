@@ -1,8 +1,5 @@
 name: CI
 
-# Validate PRABHA's JavaScript entry point and its repository test harness when present.
-# This is deliberately runtime-light: graphics and compiler integration require a
-# developer workstation and are not safe to fake on a generic CI runner.
 on:
   push:
     branches: [master]
@@ -24,18 +21,21 @@ jobs:
         with:
           node-version: 20
 
-      # Run the explicit repository test harness if it exists.
-      - name: Run tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow
+
+      - name: Run PRABHA test suite
         shell: bash
         run: |
-          if [ -f test/run-tests.js ]; then
-            node test/run-tests.js
-          else
-            echo "No test harness found; continuing with syntax validation."
-          fi
+          bash tests/run-all.sh
 
-      # Syntax validation is dependency-free and catches parser-level regressions
-      # without launching the VS Code extension runtime.
       - name: Validate JavaScript syntax
         shell: bash
         run: |
