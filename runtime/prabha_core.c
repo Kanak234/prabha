@@ -1241,3 +1241,56 @@ void textbackground(int c) { t_attr = (t_attr & 0x0F) | ((c & 7) << 4); }
 void highvideo(void) { t_attr |= 0x08; }
 void lowvideo(void)  { t_attr &= ~0x08; }
 void normvideo(void) { t_attr = LIGHTGRAY; }
+
+/* ── dos.h: date, time, random ──────────────────────────────────────────
+   Declared in runtime/dos.h. Turbo C read the clock and the random seed
+   through these; here they come from the host via <time.h>.
+   Marked prabha_dos_impl so a second definition is easy to spot.        */
+
+#include <time.h>
+#include "dos.h"   /* struct date, struct time, randomize, int86 */
+
+void getdate(struct date *d)
+{
+    time_t now;
+    struct tm *lt;
+
+    if (!d) return;
+    now = time(NULL);
+    lt = localtime(&now);
+    if (!lt) { d->da_year = 0; d->da_mon = 0; d->da_day = 0; return; }
+    d->da_year = (int)(lt->tm_year + 1900);
+    d->da_mon  = (char)(lt->tm_mon + 1);   /* Borland counts months from 1 */
+    d->da_day  = (char)lt->tm_mday;
+}
+
+void gettime(struct time *t)
+{
+    time_t now;
+    struct tm *lt;
+
+    if (!t) return;
+    now = time(NULL);
+    lt = localtime(&now);
+    if (!lt) { t->ti_hour = t->ti_min = t->ti_sec = t->ti_hund = 0; return; }
+    t->ti_hour = (unsigned char)lt->tm_hour;
+    t->ti_min  = (unsigned char)lt->tm_min;
+    t->ti_sec  = (unsigned char)lt->tm_sec;
+    t->ti_hund = 0;   /* second-resolution clock; hundredths are not available */
+}
+
+/* Setting the host clock needs root and is not something a student program
+   should do by accident. Accepted so old code links, and ignored. */
+void setdate(const struct date *d) { (void)d; }
+void settime(const struct time *t) { (void)t; }
+
+void randomize(void) { srand((unsigned)time(NULL)); }
+
+/* No DOS interrupts here. Declared so a program using int86 still links;
+   it changes nothing and reports failure. */
+int int86(int intno, union REGS *inregs, union REGS *outregs)
+{
+    (void)intno;
+    if (outregs && inregs) *outregs = *inregs;
+    return 0;
+}
