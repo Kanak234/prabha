@@ -1,8 +1,8 @@
 {
   "name": "prabha",
-  "displayName": "PRABHA \u2014 Turbo C graphics.h in VS Code",
-  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code \u2014 complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox.",
-  "version": "3.1.0",
+  "displayName": "PRABHA — Turbo C graphics.h in VS Code",
+  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code — complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox.",
+  "version": "3.1.1",
   "publisher": "KANAKPRABHAKAR",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -49,7 +49,7 @@
       },
       {
         "command": "prabha.openExample",
-        "title": "PRABHA: Open Example\u2026"
+        "title": "PRABHA: Open Example…"
       }
     ],
     "menus": {

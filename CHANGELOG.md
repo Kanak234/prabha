@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.1.1
+
+### Added
+
+- **`dos.h` now has the date, time and random API.** It previously declared
+  only `delay`, `sleep`, `sound` and `nosound` — 18 lines. Programs using
+  `struct date`, `struct time`, `getdate()` or `gettime()` failed with
+  "storage size of 'd' isn't known", which is most attendance registers,
+  billing programs and anything that stamps a record. The structs use
+  Borland's field names (`da_year`, `ti_hour` …) because programs read them
+  directly, and the values come from the host clock.
+
+  `randomize()` is implemented; `random()` is a macro, as it was in Borland's
+  header — it cannot be a function because glibc already declares
+  `long random(void)`.
+
+  `setdate`/`settime`/`int86` are accepted and do nothing, so old code links.
+  Setting the host clock needs root and should not happen by accident.
+
+- **`<strstream.h>` actually works.** The header existed but only aliased
+  `std::ostringstream`, so `ostrstream o(buf, sizeof buf)` did not compile —
+  the old class wrote into a caller-supplied buffer and the modern one owns
+  its own. It is now a real wrapper that keeps the old call shape and copies
+  into the caller's buffer.
+
+### Verified
+
+Six classic Turbo C/C++ programs compile and produce correct output:
+`clrscr`/`gotoxy`/`cprintf`, BGI graphics with `floodfill`, a class with
+`<iostream.h>` and `void main()`, file I/O through `<fstream.h>`,
+`getdate`/`gettime`/`sound`, and `ostrstream`.
+
+
 ## [3.1.0] - 2026-09-02
 
 ### Added - Turbo C++ compatibility (runs old college code unchanged)
