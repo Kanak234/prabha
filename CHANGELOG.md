@@ -59,6 +59,10 @@ PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code
   hangs. Enter is sent as `\\r\\n`: `getch()` returns 13 and swallows the `\\n`.
 - **Apple Silicon / ARM: integer divide by zero did not crash** (ARM returns 0
   silently, hiding the bug). Student builds on ARM now stop there like on a PC.
+- **Zig (Linux/macOS) debug builds turned crashes into a sanitizer `abort()`.** Zig's
+  `cc` enables UBSan at `-O0`, so a NULL-pointer write printed a Zig "panic" and the
+  debugger stopped inside libc's `pthread_kill.c` instead of on the student's line.
+  PRABHA now builds without it, matching GCC/Clang: a segfault on the faulting line.
 - **Debugger: a late command to a gdb that had already exited crashed the extension
   host** (uncaught EPIPE, found on Windows CI). Now handled.
 - Turbo mode no longer rewrites `void main()` that appears inside strings or

@@ -35,7 +35,7 @@ const toolchain = require('../lib/toolchain');
     console.log('\n=== PRABHA debugger (own gdb) on a Zig-compiled program');
     const g = await toolchain.installGdb(storage, { log: s => console.log('  ' + s) });
     const env = { ...toolchain.envWith(path.dirname(z)), ZIG_GLOBAL_CACHE_DIR: path.join(storage, 'zig-cache'),
-      PRABHA_TEST_GDB: g, PRABHA_TEST_CC: z, PRABHA_TEST_CC_ARGS: 'cc' };
+      PRABHA_TEST_GDB: g, PRABHA_TEST_CC: z, PRABHA_TEST_CC_ARGS: 'cc -fno-sanitize=undefined' };   // same flags as lib/build.js
     const d = cp.spawnSync(process.execPath, [path.join(__dirname, 'debug-test.js'), 'gdb'], { stdio: 'inherit', env });
     process.exit(d.status);
   }

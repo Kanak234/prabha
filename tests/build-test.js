@@ -101,6 +101,20 @@ function pickToolchain() {
   }
   cleanup(rd);
 
+  // 5b) Debug build ka crash wahi ho jo student dekhe (segfault, faulting line par) —
+  //     Zig -O0 apna UBSan "panic + abort()" laga deta tha (CI: Zig + PRABHA gdb)
+  const crashSrc = path.join(dir, 'nullcrash.c');
+  fs.writeFileSync(crashSrc, '#include <stdio.h>\nint main(void) {\n  int *p = 0;\n  printf("start\\n");\n  *p = 5;\n  return 0;\n}\n');
+  const rc = await build(crashSrc, { tc, runtimeDir: rt, mode: 'debug' });
+  ok(rc.ok, 'debug build of a NULL-pointer program compiles', rc.log);
+  if (rc.ok) {
+    const p = runBin(rc.bin);
+    const win = process.platform === 'win32';
+    const segv = win ? (p.status >>> 0) === 0xC0000005 : (p.signal === 'SIGSEGV' || p.signal === 'SIGBUS' || (process.arch === 'arm64' && p.signal === 'SIGTRAP'));
+    ok(segv, 'debug build crashes like the real bug (segfault), not a sanitizer abort: ' + (p.signal || p.status), JSON.stringify({ signal: p.signal, status: p.status, err: String(p.stderr).slice(0, 200) }));
+  }
+  cleanup(rc);
+
   // 6) strict mode (Turbo off) — modern code still fine, old code fails
   const mod = path.join(dir, 'modern.cpp');
   fs.writeFileSync(mod, '#include <iostream>\nint main() { std::cout << "ok\\n"; return 0; }\n');
