@@ -35,6 +35,10 @@ PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code
 
 ### Changed
 
+- **PRABHA's own debugger on Linux.** Zig has no debugger; on the first `F5` PRABHA
+  fetches a pinned, statically linked gdb 17.2 (~13 MB, SHA-256 checked) that runs on
+  any distro, and prefers it over the distro's gdb. Verified in CI: the whole
+  debugger suite with that gdb on a Zig-compiled program.
 - **PRABHA's own compiler is now the default** (`prabha.toolchain: "bundled"`). The
   first Run installs it automatically (progress shown, no questions); every student
   gets the same tested compiler instead of whatever old MinGW / TDM / CodeBlocks gcc

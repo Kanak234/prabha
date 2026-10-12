@@ -98,6 +98,10 @@ jobs:
       - name: Router + toolchain + extension wiring
         run: node tests/ci.js extension-test node tests/extension-test.js
 
+      - name: PRABHA's own debugger on Linux — real static gdb download, verify, debug suite
+        if: runner.os == 'Linux'
+        run: node tests/ci.js gdb-install node tests/gdb-install-test.js
+
       - name: PRABHA's own compiler on Windows — real WinLibs GCC + gdb download, verify, build, debug
         if: runner.os == 'Windows'
         run: node tests/ci.js winlibs-install node tests/winlibs-install-test.js

@@ -108,7 +108,8 @@ async function scenario(backend) {
   const file = path.join(dir, 'fact.c'), bin = path.join(dir, 'fact' + (win ? '.exe' : ''));
   fs.writeFileSync(file, SRC);
   const cc = (process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has));
-  const c = cp.spawnSync(cc, ['-g', '-O0', '-include', path.join(root, 'runtime', 'prabha_unbuffered.h'), file, '-o', bin], { encoding: 'utf8' });
+  const ccPre = (process.env.PRABHA_TEST_CC_ARGS || '').split(/\s+/).filter(Boolean);   // Zig: ['cc']
+  const c = cp.spawnSync(cc, [...ccPre, '-g', '-O0', '-include', path.join(root, 'runtime', 'prabha_unbuffered.h'), file, '-o', bin], { encoding: 'utf8' });
   if (c.status !== 0) { ok(backend + ': fixture compiles', false, c.stderr); return; }
 
   let client, launchArgs;
@@ -212,7 +213,7 @@ async function scenario(backend) {
   {
     const cf = path.join(dir, 'crash.c'), cbin = path.join(dir, 'crash' + (win ? '.exe' : ''));
     fs.writeFileSync(cf, CRASH);
-    cp.spawnSync((process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has)), ['-g', '-O0', cf, '-o', cbin]);
+    cp.spawnSync((process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has)), [...(process.env.PRABHA_TEST_CC_ARGS || '').split(/\s+/).filter(Boolean), '-g', '-O0', cf, '-o', cbin]);
     let c3, args3;
     if (backend === 'gdb') { c3 = new Client(inlineTransport(new GdbDebugSession())); args3 = { program: cbin, cwd: dir, gdbPath: GDB, console: 'internal' }; }
     else { c3 = new Client(processTransport(findLldbDap(), [])); args3 = { program: cbin, cwd: dir }; }

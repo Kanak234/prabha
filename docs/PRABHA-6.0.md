@@ -1,6 +1,6 @@
 # PRABHA 6.0 — PRD + TRD
 
-Status: in development (2026-10-12) · Owner: Kanak Prabhakar · Replaces the 5.1 / 5.2 / 6.0 plan with one release.
+Status: released 6.0.0 (2026-10-13) — CI green on Windows, Linux, macOS · Owner: Kanak Prabhakar · Replaces the 5.1 / 5.2 / 6.0 plan with one release.
 
 ## 1. Problem
 
@@ -34,12 +34,12 @@ BCA / B.Tech / class 11–12 students; lab instructors; anyone with old Turbo C/
 
 | # | Feature | Behaviour |
 |---|---|---|
-| F1 | **Own compiler, every OS** | `auto` (default): working system compiler, else PRABHA's own. Windows: pinned WinLibs GCC (includes gdb). Linux/macOS: pinned Zig 0.17.0 (clang-based C/C++ with its own libc/libc++). Downloaded once, SHA-256 verified against the official index, kept in PRABHA's storage; no PATH changes. `prabha.toolchain`: `auto` / `bundled` / `system`. |
+| F1 | **Own compiler, every OS** | `bundled` (default): PRABHA's own compiler, auto-installed on the first Run; offline → PC's compiler with a notice. `auto`: PC's compiler first. Windows: pinned WinLibs GCC (includes gdb). Linux/macOS: pinned Zig 0.17.0 (clang-based C/C++ with its own libc/libc++). Downloaded once, SHA-256 verified against the official index, kept in PRABHA's storage; no PATH changes. `prabha.toolchain`: `auto` / `bundled` / `system`. |
 | F2 | **Run (Ctrl+F9)** | Programs with `graphics.h`/`conio.h` → PRABHA panel (unchanged). Other programs → **PRABHA Console** (own terminal): live input, unbuffered output, Dev-C++ style footer "Process exited after X s with return value N", "Press any key to close". |
 | F3 | **Compile only (Alt+F9)** | Compile, show errors, no run. |
 | F4 | **Errors in Problems tab** | Compiler errors/warnings mapped to the student's file and line (clickable), each with a **Hinglish explanation** of the ~25 most common beginner errors. |
 | F5 | **Crash explanations** | Segmentation fault, divide by zero, stack overflow, abort — on Linux/macOS signals and Windows NTSTATUS codes — explained in Hinglish instead of a bare exit code. |
-| F6 | **Debugger** | VS Code Debug panel: breakpoints, continue, step over/into/out, call stack, locals with expandable arrays/structs, watch/hover. Linux/Windows: PRABHA's own debug adapter over **gdb/MI**; macOS: **lldb-dap** from Xcode tools. F5 starts debugging a C/C++ file without any launch.json. Turbo keys while debugging: F7 step into, F8 step over. |
+| F6 | **Debugger** | VS Code Debug panel: breakpoints, continue, step over/into/out, call stack, locals with expandable arrays/structs, watch/hover. Linux/Windows: PRABHA's own debug adapter over **gdb/MI** (Windows: gdb from PRABHA GCC; Linux: PRABHA's pinned static gdb 17.2, auto-installed on first F5); macOS: **lldb-dap** from Xcode tools. F5 starts debugging a C/C++ file without any launch.json. Turbo keys while debugging: F7 step into, F8 step over. |
 | F7 | **Turbo C++ → Modern C++** | Side-by-side panel (old / modern), card per change with Hinglish/English explanation and a quiz, Apply / Open in new tab / Copy. Same idea and UI as Punarnava. |
 | F8 | **Stability** | Paths with spaces / Hindi characters, no hangs (stop button, timeout), clear messages instead of raw tool errors. |
 
@@ -112,8 +112,11 @@ Decisions:
 
 ## 8. Limitations (known, documented)
 
-- Linux: the debugger needs `gdb` from the distro (PRABHA offers the one-line
-  install); Zig ships no debugger.
+- Linux: Zig ships no debugger, so PRABHA brings its own static gdb (guyush1/gdb-static
+  17.2 slim, pinned SHA-256) on the first F5.
+- Windows: MinGW cannot run from a path with a space or non-ASCII letters; the
+  toolchain then lives in C:\\Users\\Public\\prabha-toolchain and builds in an ASCII
+  work folder.
 - macOS: the debugger needs Xcode Command Line Tools (`xcode-select --install`).
 - Keyboard input to `graphics.h` programs while *debugging* is not supported in
   6.0 (console programs get full input).

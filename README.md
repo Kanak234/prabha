@@ -119,34 +119,30 @@ Your source file on disk is never modified — the adaptation happens on a
 temporary copy at compile time. If you only write standard modern C++ and want
 strict compilation, set `prabha.turboCppCompatibility` to `false`.
 
-## Compiler — PRABHA's own, on every OS (6.0)
+## Compiler and debugger — PRABHA's own, on every OS (6.0)
 
-You don't need to set anything up. When you press `Ctrl+F9`, PRABHA finds a
-compiler by itself:
+You don't need to install anything. The first time you press `Ctrl+F9`, PRABHA
+installs **its own** compiler (progress shown, no questions, once) and uses it from
+then on — every student gets the same tested compiler, not whatever old MinGW /
+TDM / CodeBlocks gcc happens to be on the PC.
 
-1. your `prabha.cCompiler` / `prabha.cppCompiler` setting, if you changed it
-2. `gcc` / `cc` / `clang` on your PATH
-3. compilers installed but **not** on PATH — CodeBlocks' MinGW, MSYS2, TDM-GCC,
-   Dev-C++, WinGet's WinLibs (the usual college-lab setups)
-4. PRABHA's own compiler, if you installed it before
+| OS | PRABHA's own compiler | PRABHA's debugger |
+|---|---|---|
+| Windows | GCC 16.2 (WinLibs), ~260 MB once | gdb from the same download |
+| Linux | Zig 0.17.0 — clang + libc + libc++, ~57 MB once | static gdb 17.2, ~13 MB, fetched on the first `F5` |
+| macOS | Zig 0.17.0, ~57 MB once | Apple's `lldb-dap` (see limits) |
 
-If none is found, one click on **Install PRABHA compiler**:
+Every download is pinned to an exact version and its SHA-256 is checked before
+anything is unpacked. Everything lives in PRABHA's own folder — your system PATH
+is not touched. On Windows, if your user folder has a space or Hindi letters
+(MinGW cannot run from such paths) PRABHA keeps its toolchain in
+`C:\Users\Public\prabha-toolchain` instead.
 
-| OS | PRABHA's own compiler |
-|---|---|
-| Windows | GCC 16.2 (WinLibs, includes **gdb** for the debugger), ~260 MB once |
-| Linux / macOS | Zig 0.17.0 — clang + libc + libc++ in one download, ~57 MB once |
-
-The download's SHA-256 is checked before anything is unpacked, and it lives only
-inside PRABHA's own folder — your system PATH is not touched. Set
-`prabha.toolchain` to `bundled` to always use PRABHA's own compiler, or
-`system` to never use it. **PRABHA: Which compiler am I using?** shows the
-compiler and debugger in use.
-
-**Debugger:** Windows uses the gdb that comes with PRABHA GCC. macOS uses Apple's
-`lldb-dap` (Xcode Command Line Tools: `xcode-select --install`). Linux uses
-`gdb` from your distro (`sudo apt install gdb`) — PRABHA shows the exact command
-if it is missing.
+No internet the first time? PRABHA uses a compiler already on the PC (your
+setting, PATH, or the usual CodeBlocks / MSYS2 / TDM-GCC / Dev-C++ / WinGet folders)
+and tells you so. `prabha.toolchain`: `bundled` (default) · `auto` (prefer the
+PC's compiler) · `system` (never download). **PRABHA: Which compiler am I using?**
+shows the compiler and debugger in use.
 
 ## Commands
 
@@ -183,6 +179,9 @@ arrow-key game, and a pure-conio menu. Run **PRABHA: Open Example…**
 - `registerbgidriver`, `registerbgifont`, `installuserdriver` and
   `installuserfont` return real BGI error codes instead of pretending: there
   are no `.BGI` or `.CHR` files here.
+- **macOS debugger:** Apple allows only its own debugger to control programs, so
+  `F5` needs Xcode Command Line Tools (`xcode-select --install`, free, once).
+  Compiling and running need nothing.
 - While debugging a `graphics.h` program, breakpoints, steps and variables
   work but the 640×480 screen is not drawn — use `Ctrl+F9` to see it.
 - In the debugger, `getch()` waits for Enter (the terminal is in line mode).

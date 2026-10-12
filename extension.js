@@ -193,6 +193,30 @@ async function installBundledWithProgress() {
   return !!cachedTc;
 }
 
+/** Linux: PRABHA ka apna static gdb download + SHA-256 verify + install (progress ke saath) */
+async function installGdbWithProgress() {
+  const f = toolchain.GDB_STATIC.files[process.arch];
+  try {
+    return await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PRABHA: debugger (gdb ' + toolchain.GDB_STATIC.version + ', ~' + (f ? f.mb : 13) + ' MB, ek baar) install ho raha hai', cancellable: true }, async (progress, token) => {
+      let last = 0;
+      const g = await toolchain.installGdb(storageDir, {
+        isCancelled: () => token.isCancellationRequested,
+        log: s => out.appendLine('[debugger] ' + s),
+        onProgress: (got, total) => {
+          const pct = total ? Math.floor(got * 100 / total) : 0;
+          if (pct > last) { progress.report({ increment: pct - last, message: Math.round(got / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB' }); last = pct; }
+        }
+      });
+      out.appendLine('[debugger] ready: ' + g);
+      return g;
+    });
+  } catch (e) {
+    out.appendLine('[debugger] install failed: ' + (e.message || e));
+    vscode.window.showErrorMessage('PRABHA: debugger install nahi ho paya — ' + (e.message || e) + '. Internet check karo, ya distro ka gdb install karo.');
+    return null;
+  }
+}
+
 /** User apna compiler folder (…\\bin) chune → settings mein save */
 async function chooseCompilerFolder() {
   const pick = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Is folder mein gcc/clang hai' });
@@ -215,7 +239,7 @@ async function chooseCompilerFolder() {
 function compilerInfo() {
   cachedTc = detectTc();
   if (!cachedTc) { installCompiler(true); return; }
-  const gdb = toolchain.findGdb(cachedTc), lldb = toolchain.findLldbDap();
+  const gdb = toolchain.findGdb(cachedTc, storageDir), lldb = toolchain.findLldbDap();
   out.appendLine('PRABHA ' + VERSION + ' compiler: ' + cachedTc.version +
     '\n  C:        ' + cachedTc.cc + ' ' + (cachedTc.ccArgs || []).join(' ') +
     '\n  C++:      ' + (cachedTc.cxx ? cachedTc.cxx + ' ' + (cachedTc.cxxArgs || []).join(' ') : '(not found)') +
@@ -597,15 +621,18 @@ const debugConfigProvider = {
     const r = await compileFile(file, 'debug');
     if (!r) return undefined;                        // errors Problems tab mein — debug shuru nahi
     const conf = cfg();
-    const gdb = toolchain.findGdb(r.tc);
+    let gdb = toolchain.findGdb(r.tc, storageDir);
+    // Linux: debugger nahi mila → PRABHA ka apna gdb apne aap le aao (~13 MB, ek baar)
+    if (!gdb && toolchain.gdbInstallable()) gdb = await installGdbWithProgress();
     const lldb = !gdb || process.platform === 'darwin' ? toolchain.findLldbDap() : null;
     const backend = process.platform === 'darwin' ? (lldb ? 'lldb' : gdb ? 'gdb' : null) : (gdb ? 'gdb' : lldb ? 'lldb' : null);
     if (!backend) {
       cleanup(r);
       const h = toolchain.debuggerHint();
-      const pick = await vscode.window.showErrorMessage('PRABHA Debug: debugger nahi mila. ' + (h.command ? 'Ek command: ' + h.command : h.label), h.command ? 'Run in terminal' : 'Install PRABHA compiler');
+      const pick = await vscode.window.showErrorMessage('PRABHA Debug: debugger nahi mila. ' + (h.command ? 'Ek command: ' + h.command : h.label), h.command ? 'Run in terminal' : h.prabhaGdb ? 'Install PRABHA debugger' : 'Install PRABHA compiler');
       if (pick === 'Run in terminal') { const t = vscode.window.createTerminal({ name: 'PRABHA · debugger install' }); t.show(); t.sendText(h.command); }
       if (pick === 'Install PRABHA compiler') installCompiler(true);
+      if (pick === 'Install PRABHA debugger') installGdbWithProgress();
       return undefined;
     }
     if (r.usesPanel) out.appendLine('\n[PRABHA] graphics.h program debug ho raha hai: steps, variables, breakpoints sab chalenge — par 640×480 screen sirf Ctrl+F9 (Run) mein dikhti hai.');

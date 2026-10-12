@@ -28,5 +28,16 @@ const toolchain = require('../lib/toolchain');
   const r = cp.spawnSync(process.execPath, [path.join(__dirname, 'build-test.js')], {
     stdio: 'inherit', env: { ...process.env, PRABHA_TEST_TOOLCHAIN: 'zig', PRABHA_TEST_ZIG: z }
   });
-  process.exit(r.status);
+  if (r.status !== 0) process.exit(r.status);
+
+  // Linux: poora PRABHA-ka-apna stack — Zig se compile, PRABHA ke gdb se debug
+  if (toolchain.gdbInstallable()) {
+    console.log('\n=== PRABHA debugger (own gdb) on a Zig-compiled program');
+    const g = await toolchain.installGdb(storage, { log: s => console.log('  ' + s) });
+    const env = { ...toolchain.envWith(path.dirname(z)), ZIG_GLOBAL_CACHE_DIR: path.join(storage, 'zig-cache'),
+      PRABHA_TEST_GDB: g, PRABHA_TEST_CC: z, PRABHA_TEST_CC_ARGS: 'cc' };
+    const d = cp.spawnSync(process.execPath, [path.join(__dirname, 'debug-test.js'), 'gdb'], { stdio: 'inherit', env });
+    process.exit(d.status);
+  }
+  process.exit(0);
 })().catch(e => { console.error('FAIL ' + (e.stack || e)); process.exit(1); });
