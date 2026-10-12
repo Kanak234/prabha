@@ -128,20 +128,29 @@ static long now_ms(void) {
 }
 
 /*
- * Windows: stdin/stdout open in TEXT mode by default. Text mode turns every
- * "\n" we write into "\r\n" and, worse, makes _read() on a pipe hold back a
- * lone '\r' (the Enter key) while it waits to see if a '\n' follows — so
- * getch() never returned for Enter. Binary mode gives us the raw bytes.
+ * Windows: stdin/stdout are left in TEXT mode on purpose (6.0). Earlier
+ * versions switched both to binary so getch() would not hang on Enter, but
+ * that made scanf/gets keep the '\r' of "\r\n" ("Hazaribagh\r") and gave a
+ * Turbo program different line endings from any normal Windows program.
+ * getch() now reads raw bytes with ReadFile (see pr_raw_byte), which never
+ * waits for a '\n', so text mode is safe for everything else.
  */
-static void pr_platform_init(void) {
+static void pr_platform_init(void) { }
+
+/* One raw byte from stdin, bypassing the C runtime's text-mode translation. */
+static long pr_raw_byte(unsigned char *c) {
 #ifdef _WIN32
-    static int done = 0;
-    if (done) return;
-    done = 1;
-    _setmode(_fileno(stdin), _O_BINARY);
-    _setmode(_fileno(stdout), _O_BINARY);
+    DWORD n = 0;
+    if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), c, 1, &n, NULL)) return -1;
+    return (long)n;
+#else
+    return (long)read(0, c, 1);
 #endif
 }
+
+/* Enter arrives as "\r\n" (PRABHA sends both so scanf/fgets see a full line);
+ * getch() returns the '\r' (13, as in Turbo C) and swallows the '\n' after it. */
+static int t_swallow_lf = 0;
 
 static int proto_fd(void) {
     pr_platform_init();
@@ -1054,17 +1063,28 @@ static int stdin_ready(void) {
 int kbhit(void) {
     if (t_ungot != -1) return 1;
     prabha_flush();                    /* game loops poll this — show them */
-    return stdin_ready();
+    if (!stdin_ready()) return 0;
+    if (t_swallow_lf) {                /* the '\n' of an Enter is not a new key */
+        unsigned char c = 0;
+        t_swallow_lf = 0;
+        if (pr_raw_byte(&c) <= 0) return 0;
+        if (c != '\n') { t_ungot = c; return 1; }
+        return stdin_ready();
+    }
+    return 1;
 }
 
 int getch(void) {
     if (t_ungot != -1) { int c = t_ungot; t_ungot = -1; return c; }
     prabha_flush();
     proto_line("{\"t\":\"input\",\"mode\":\"getch\"}");
-    unsigned char c = 0;
-    long n = (long)pr_read(0, &c, 1);
-    if (n <= 0) return 27;             /* stream closed — behave like ESC */
-    return c;
+    for (;;) {
+        unsigned char c = 0;
+        if (pr_raw_byte(&c) <= 0) return 27;   /* stream closed — behave like ESC */
+        if (t_swallow_lf && c == '\n') { t_swallow_lf = 0; continue; }
+        t_swallow_lf = (c == '\r');
+        return c;
+    }
 }
 
 int getche(void) { int c = getch(); if (c >= 32 && c < 127) putch(c); return c; }

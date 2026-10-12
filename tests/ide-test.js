@@ -62,7 +62,8 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
   console.log('\n[crash] real crashing programs');
   const crashes = [
     ['segv.c', '#include <stdio.h>\nint main(void){ int *p = 0; *p = 5; return 0; }\n', 'SIGSEGV', /Segmentation fault/],
-    ['divzero.c', '#include <stdio.h>\nint main(int c, char **v){ volatile int z = c - 1; printf("%d\\n", 10 / z); return 0; }\n', 'SIGFPE', /0 se divide/],
+    // ARM: PRABHA ka divide-by-zero trap → SIGTRAP (x86 par CPU khud SIGFPE deta hai)
+    ['divzero.c', '#include <stdio.h>\nint main(int c, char **v){ volatile int z = c - 1; printf("%d\\n", 10 / z); return 0; }\n', process.arch === 'arm64' && !win ? 'SIGTRAP' : 'SIGFPE', /0 se divide/],
     ['stack.c', 'int f(int n){ volatile char big[4096]; big[0] = (char)n; return f(n + 1) + big[0]; }\nint main(void){ return f(0); }\n', win ? 'STACK' : 'SIGSEGV', win ? /Stack overflow/ : /Segmentation fault/],
     ['abort.c', '#include <stdlib.h>\nint main(void){ abort(); }\n', 'SIGABRT', /abort/]
   ];
@@ -82,6 +83,7 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
   ok('normal exit 3 → no crash text', explainExit({ code: 3, signal: null, platform: 'linux' }) === null);
   ok('Windows 0xC0000005 → segfault text', explainExit({ code: 3221225477, platform: 'win32' }).name === 'SIGSEGV');
   ok('Windows 0xC00000FD → stack overflow', explainExit({ code: -1073741571, platform: 'win32' }).name === 'STACK');
+  ok('SIGTRAP mentions both divide-by-zero and NULL pointer', /0 se divide/.test(explainExit({ signal: 'SIGTRAP' }).title) && /NULL/.test(explainExit({ signal: 'SIGTRAP' }).title));
 
   console.log('\n[console] PRABHA Console with a real interactive program');
   {

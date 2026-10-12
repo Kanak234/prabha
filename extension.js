@@ -426,7 +426,9 @@ function sendKey(k) {
   };
   try {
     if (k.key in scan) child.stdin.write(Buffer.from([0, scan[k.key]]));
-    else if (k.key === 'Enter') child.stdin.write('\r');
+    // "\r\n": getch() ko 13 milta hai (runtime '\n' nigal leta hai), aur scanf/fgets
+    // ko poori line — dono kaam karte hain, Windows text mode mein bhi.
+    else if (k.key === 'Enter') child.stdin.write('\r\n');
     else if (k.key === 'Backspace') child.stdin.write(Buffer.from([8]));
     else if (k.key === 'Tab') child.stdin.write('\t');
     else if (k.key === 'Escape') child.stdin.write(Buffer.from([27]));

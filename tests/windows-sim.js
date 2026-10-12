@@ -73,10 +73,14 @@ int main(void){
   int b=getch();
   int c=(b==0)?getch():-1;
   int d=getch();
-  printf(" got %d %d %d %d\\n",a,b,c,d);
+  int e=getch();
+  char city[32];
+  printf(" got %d %d %d %d %d\\n",a,b,c,d,e);
+  scanf("%31s", city);
+  printf("city=[%s]\\n", city);
   outtextxy(10,200,"done");
   closegraph();
-  return (a=='K' && b==0 && c==77 && d==13) ? 0 : 9;
+  return (a=='K' && b==0 && c==77 && d==13 && e=='Z') ? 0 : 9;
 }`);
   const e = compile(CC, prog, path.join(tmp, 'keys.exe'), ['-std=c99']);
   ok(!e, 'key test program compiles', e);
@@ -90,7 +94,10 @@ int main(void){
         inputs++;
         if (inputs === 1) child.stdin.write('K');
         if (inputs === 2) child.stdin.write(Buffer.from([0, 77]));   // RIGHT arrow = 2 bytes
-        if (inputs === 4) child.stdin.write('\r');                   // ENTER — used to hang
+        // ENTER = "\r\n" (extension yahi bhejta hai): getch 13 de, '\n' nigle; agla key 'Z'
+        if (inputs === 4) child.stdin.write('\r\n');
+        if (inputs === 5) child.stdin.write('Z');
+        if (inputs === 5) child.stdin.write('Hazaribagh\r\n');   // scanf line, Windows-style Enter
       }
     });
     // chunks ko jaan-boojh kar 7-byte tukdon mein todo: pipe boundary ka worst case
@@ -99,9 +106,10 @@ int main(void){
       const t = setTimeout(() => { child.kill(); res('timeout'); }, 60000);
       child.on('close', c => { clearTimeout(t); router.end(); res(c); });
     });
-    ok(code === 0, 'getch decodes K, arrow (0,77) and Enter (13) — no hang', 'exit=' + code + ' inputs=' + inputs);
+    ok(code === 0, 'getch decodes K, arrow (0,77), Enter (13, its \\n swallowed) and the next key — no hang', 'exit=' + code + ' inputs=' + inputs + ' ' + JSON.stringify(text));
+    ok(/city=\[Hazaribagh\]/.test(text), 'scanf after getch gets "Hazaribagh" without a stray \\r', JSON.stringify(text));
     ok(sawInit && frames >= 1, 'init + frames arrive over stdout (' + frames + ' frames)');
-    ok(/Press keys:/.test(text) && /got 75 0 77 13/.test(text), 'printf text reaches Output intact', JSON.stringify(text));
+    ok(/Press keys:/.test(text) && /got 75 0 77 13 90/.test(text), 'printf text reaches Output intact', JSON.stringify(text));
     ok(!/##PRABHA##|"t":"frame"/.test(text), 'no protocol fragments leak into Output', JSON.stringify(text.slice(0, 200)));
   }
 
