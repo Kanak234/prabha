@@ -60,8 +60,8 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   const ext = require(path.join(root, 'extension.js'));
   ext.activate(mock.context(root));
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  ok(pkg.version === '6.0.0', 'version is 6.0.0');
-  ok(/PR_VERSION "6\.0\.0"/.test(fs.readFileSync(path.join(root, 'runtime', 'prabha_core.c'), 'utf8')), 'runtime version is 6.0.0');
+  ok(pkg.version === '6.0.1', 'version is 6.0.1');
+  ok(/PR_VERSION "6\.0\.1"/.test(fs.readFileSync(path.join(root, 'runtime', 'prabha_core.c'), 'utf8')), 'runtime version is 6.0.1');
   const keys = pkg.contributes.keybindings.map(k => k.key + '→' + k.command);
   ok(keys.includes('ctrl+f9→prabha.run') && keys.includes('alt+f9→prabha.compile') && keys.includes('f7→workbench.action.debug.stepInto') && keys.includes('f8→workbench.action.debug.stepOver'), 'Turbo keys: Ctrl+F9 run, Alt+F9 compile, F7/F8 step');
   ok(pkg.contributes.debuggers[0].type === 'prabha' && pkg.contributes.breakpoints.length === 2, 'debugger + breakpoints contributed');
@@ -133,7 +133,7 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   await vscode.commands.executeCommand('prabha.compile', bdoc.uri);
   const after = ext._diag()._m.get(vscode.Uri.file(bad).toString());
   ok(!after || !after.some(d => d.severity === 0), 'fixed file → errors cleared');
-  ok(vscode._messages.some(m => /compile ho gaya/.test(m.m)), 'Alt+F9 success message');
+  ok(vscode._messages.some(m => /compiled ✓/.test(m.m)), 'Alt+F9 success message');
 
   /* ── 6. Turbo → Modern panel ── */
   console.log('\n[modern] Turbo → Modern panel');
@@ -150,8 +150,7 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   const rend = mp.posted.filter(m => m.t === 'render').pop();
   ok(rend && rend.changes.length >= 2 && rend.changes.every(c => c.explanation && c.explanation.why), 'changes with explanations (' + (rend && rend.changes.map(c => c.rule).join(',')) + ')');
   ok(rend && rend.diff.some(d => d.type === 'add'), 'side-by-side diff rows');
-  await mp.send({ t: 'lang', lang: 'en' });
-  ok(await until(() => mp.posted.some(m => m.t === 'render' && m.lang === 'en' && m.changes[0].explanation.why !== rend.changes[0].explanation.why)), 'English toggle re-renders with English text');
+  ok(rend && rend.lang === 'en' && /^[\x00-\x7f`’—…→≠ ]*$/.test(rend.changes.map(c => c.explanation.why + c.explanation.title).join('')) && !/\b(hai|nahi|karo|mein)\b/.test(rend.changes.map(c => c.explanation.why).join(' ')), 'panel explanations are in English by default');
   await mp.send({ t: 'check' });
   await until(() => mp.posted.some(m => m.t === 'check'), 60000);
   const chk = mp.posted.find(m => m.t === 'check');

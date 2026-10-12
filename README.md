@@ -9,7 +9,7 @@ other extension needed. Windows, Linux and macOS.
 | Key | What it does |
 |---|---|
 | `Ctrl+F9` | Compile + run. Console programs open in **PRABHA Console** (type input, *Process exited after 0.42 s with return value 0*, *Press any key*). `graphics.h` / `conio.h` programs open the 640×480 panel. |
-| `Alt+F9` | Compile only — errors go to the Problems tab; click one to jump to the line. Each error has a Hinglish tip (`; bhool gaye?`, `iostream.h purana header hai…`). |
+| `Alt+F9` | Compile only — errors go to the Problems tab; click one to jump to the line. Each common error has a plain-English tip ("a `;` is missing on the previous line", "`iostream.h` is an old Turbo C++ header"…). |
 | `F5` | Debug — breakpoints (click the gutter), variables, watch, call stack. No `launch.json` needed. |
 | `F7` / `F8` | Step into / step over while debugging (Turbo C++ keys). `F4` runs to the cursor, `Ctrl+F2` stops. |
 | ✨ button | **Turbo C++ → Modern C++**: old code next to new code, why each change was made, the common mistake, a one-question quiz, and **✔ Check: same output?** which compiles the old version in Turbo mode and the new one with strict `-std=c++17 -pedantic-errors` and compares their output. |

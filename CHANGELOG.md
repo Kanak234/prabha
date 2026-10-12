@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.0.1 — 2026-10-13
+
+### Changed
+
+- **Everything PRABHA shows is now in English** — compiler-error tips, crash
+  explanations, console and debugger messages, notifications, and the Turbo →
+  Modern C++ panel (cards, quiz, buttons). English is the language students
+  everywhere in India share. The panel's language picker is gone.
+
+
 ## 6.0.0 — 2026-10-12
 
 PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code

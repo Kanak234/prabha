@@ -37,10 +37,10 @@ BCA / B.Tech / class 11–12 students; lab instructors; anyone with old Turbo C/
 | F1 | **Own compiler, every OS** | `bundled` (default): PRABHA's own compiler, auto-installed on the first Run; offline → PC's compiler with a notice. `auto`: PC's compiler first. Windows: pinned WinLibs GCC (includes gdb). Linux/macOS: pinned Zig 0.17.0 (clang-based C/C++ with its own libc/libc++). Downloaded once, SHA-256 verified against the official index, kept in PRABHA's storage; no PATH changes. `prabha.toolchain`: `auto` / `bundled` / `system`. |
 | F2 | **Run (Ctrl+F9)** | Programs with `graphics.h`/`conio.h` → PRABHA panel (unchanged). Other programs → **PRABHA Console** (own terminal): live input, unbuffered output, Dev-C++ style footer "Process exited after X s with return value N", "Press any key to close". |
 | F3 | **Compile only (Alt+F9)** | Compile, show errors, no run. |
-| F4 | **Errors in Problems tab** | Compiler errors/warnings mapped to the student's file and line (clickable), each with a **Hinglish explanation** of the ~25 most common beginner errors. |
-| F5 | **Crash explanations** | Segmentation fault, divide by zero, stack overflow, abort — on Linux/macOS signals and Windows NTSTATUS codes — explained in Hinglish instead of a bare exit code. |
+| F4 | **Errors in Problems tab** | Compiler errors/warnings mapped to the student's file and line (clickable), each with a **plain-English explanation** of the ~25 most common beginner errors. |
+| F5 | **Crash explanations** | Segmentation fault, divide by zero, stack overflow, abort — on Linux/macOS signals and Windows NTSTATUS codes — explained in plain English instead of a bare exit code. |
 | F6 | **Debugger** | VS Code Debug panel: breakpoints, continue, step over/into/out, call stack, locals with expandable arrays/structs, watch/hover. Linux/Windows: PRABHA's own debug adapter over **gdb/MI** (Windows: gdb from PRABHA GCC; Linux: PRABHA's pinned static gdb 17.2, auto-installed on first F5); macOS: **lldb-dap** from Xcode tools. F5 starts debugging a C/C++ file without any launch.json. Turbo keys while debugging: F7 step into, F8 step over. |
-| F7 | **Turbo C++ → Modern C++** | Side-by-side panel (old / modern), card per change with Hinglish/English explanation and a quiz, Apply / Open in new tab / Copy. Same idea and UI as Punarnava. |
+| F7 | **Turbo C++ → Modern C++** | Side-by-side panel (old / modern), card per change with an English explanation and a quiz, Apply / Open in new tab / Copy. Same idea and UI as Punarnava. |
 | F8 | **Stability** | Paths with spaces / Hindi characters, no hangs (stop button, timeout), clear messages instead of raw tool errors. |
 
 ### F7 rules (Turbo → Modern)
@@ -80,6 +80,8 @@ PRABHA's runtime and only their non-graphics parts are modernised.
   C++ compat mode (verified on Linux; CI on macOS).
 - A7 All suites green on Windows, Linux and macOS in CI.
 
+**6.0.1 decision:** every user-facing text is English (students across India, including the South, share English); the Hinglish teaching text for the Turbo → Modern panel stays in the source for a possible future language setting.
+
 ## 7. Architecture (TRD)
 
 ```
@@ -87,7 +89,7 @@ extension.js            VS Code glue: commands, panel, console, debug provider
 lib/toolchain.js        compiler + debugger discovery, WinLibs/Zig install (sha256)
 lib/stream.js           stdout protocol router (5.0)
 lib/diagnostics.js      GCC/Clang output → {file,line,col,severity,message,tip}
-lib/crash.js            exit code / signal → Hinglish explanation
+lib/crash.js            exit code / signal → English explanation
 lib/console-core.js     PRABHA Console logic (pure; tested without VS Code)
 lib/modern/             Turbo → Modern engine: lexer, rules, explain (pure)
 lib/debug/mi.js         gdb/MI output parser (pure)

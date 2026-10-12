@@ -1,8 +1,8 @@
 {
   "name": "prabha",
   "displayName": "PRABHA — Turbo C++ IDE in VS Code (compiler, debugger, graphics.h)",
-  "description": "Dev-C++ / Turbo C++ as a VS Code extension IDE: own compiler on Windows, Linux and macOS, Ctrl+F9 run console with \"Press any key\", clickable errors with Hinglish tips, crash explanations, F5 debugger (F7/F8 steps), graphics.h + conio.h 640x480 panel, and Turbo C++ → Modern C++ converter that explains every change.",
-  "version": "6.0.0",
+  "description": "Dev-C++ / Turbo C++ as a VS Code extension IDE: own compiler on Windows, Linux and macOS, Ctrl+F9 run console with \"Press any key\", clickable errors with plain-English tips, crash explanations, F5 debugger (F7/F8 steps), graphics.h + conio.h 640x480 panel, and Turbo C++ → Modern C++ converter that explains every change.",
+  "version": "6.0.1",
   "publisher": "KANAKPRABHAKAR",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -27,7 +27,6 @@
     "gdb",
     "c++",
     "modern c++",
-    "hinglish",
     "education",
     "mingw",
     "zig"

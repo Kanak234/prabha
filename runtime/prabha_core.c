@@ -57,7 +57,7 @@ static void pr_sleep_ms(unsigned ms) { struct timespec t = { ms / 1000u, (long)(
 #define PR_W 640
 #define PR_H 480
 #define PR_PAGES 4
-#define PR_VERSION "6.0.0"
+#define PR_VERSION "6.0.1"
 
 /* ── state ───────────────────────────────────────────────────── */
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * tests/ide-test.js — PRABHA 6.0 ke IDE features ka test (har OS par same):
- *   1. diagnostics: ASLI compiler (gcc/g++/clang, jo mile) ke errors parse + Hinglish tip
+ *   1. diagnostics: ASLI compiler (gcc/g++/clang, jo mile) ke errors parse + English tip
  *   2. crash:       asli programs jo segfault / 0 se divide / stack overflow / abort karte hain
  *   3. console:     asli program jo prompt deta hai aur input padhta hai — prompt input
  *                   se PEHLE dikhna chahiye (unbuffered prelude), echo, backspace, footer
@@ -34,13 +34,13 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
   console.log('\n[diagnostics] parser + tips (compiler: ' + CC + ' / ' + CXX + ')');
   // Real compiler output
   const cases = [
-    ['missing_semi.c', 'int main(void){ int a = 5\n return a; }\n', /`;` chhoot gaya/],
-    ['no_std.cpp', '#include <iostream>\nint main(){ cout << "hi"; }\n', /std namespace/],
+    ['missing_semi.c', 'int main(void){ int a = 5\n return a; }\n', /`;` is missing/],
+    ['no_std.cpp', '#include <iostream>\nint main(){ cout << "hi"; }\n', /`std` namespace/],
     ['void_main.cpp', '#include <cstdio>\nvoid main(){ printf("x"); }\n', /void main/],
-    ['old_header.cpp', '#include <iostream.h>\nint main(){ return 0; }\n', /Turbo C\+\+ ka purana header/],
+    ['old_header.cpp', '#include <iostream.h>\nint main(){ return 0; }\n', /old Turbo C\+\+ header/],
     ['scanf_amp.c', '#include <stdio.h>\nint main(void){ int x; scanf("%d", x); return x; }\n', /&/],
-    ['undeclared.c', 'int main(void){ return summ; }\n', /declare nahi hai/],
-    ['brace.c', 'int main(void){ if (1) { return 0;\n', /`\{` khula/]
+    ['undeclared.c', 'int main(void){ return summ; }\n', /not declared here/],
+    ['brace.c', 'int main(void){ if (1) { return 0;\n', /`\{` was never closed/]
   ];
   for (const [name, src, tipRe] of cases) {
     const f = path.join(tmp, name);
@@ -49,12 +49,12 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
     const r = cp.spawnSync(drv, ['-Wall', '-fsyntax-only', f], { encoding: 'utf8' });
     const ds = parseDiagnostics((r.stderr || '') + (r.stdout || ''), { mapFile: p => (path.resolve(p) === path.resolve(f) ? f : null) });
     const hit = ds.find(d => d.file === f && d.tip && tipRe.test(d.tip));
-    ok(name + ': line ' + (hit ? hit.line : '?') + ' + Hinglish tip', !!hit, JSON.stringify(ds.slice(0, 3)) + '\n' + r.stderr);
+    ok(name + ': line ' + (hit ? hit.line : '?') + ' + English tip', !!hit, JSON.stringify(ds.slice(0, 3)) + '\n' + r.stderr);
   }
   // Known formats (so both GCC and Clang wording are covered whichever is installed)
   ok('Windows path with drive letter parses', parseDiagnostics('C:\\Users\\x y\\a.c:3:9: error: expected \';\' before \'}\' token')[0].line === 3);
-  ok('clang wording: undeclared cout', /std namespace/.test(tipFor("use of undeclared identifier 'cout'")));
-  ok('gcc wording: undeclared cout', /std namespace/.test(tipFor("'cout' was not declared in this scope")));
+  ok('clang wording: undeclared cout', /`std` namespace/.test(tipFor("use of undeclared identifier 'cout'")));
+  ok('gcc wording: undeclared cout', /`std` namespace/.test(tipFor("'cout' was not declared in this scope")));
   ok('linker: undefined reference → line 1 of the file', parseDiagnostics("/usr/bin/ld: /tmp/x.o: in function `main':\nx.c:(.text+0x9): undefined reference to `foo'", { mainFile: '/a.c' }).some(d => d.file === '/a.c' && /definition/.test(d.tip)));
   ok('smart quotes from WhatsApp', /smart quotes/.test(tipFor("stray '\\342' in program")));
   ok('note: lines attach to the previous error', parseDiagnostics('a.c:1:1: error: x\na.c:1:1: note: y').length === 1);
@@ -63,7 +63,7 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
   const crashes = [
     ['segv.c', '#include <stdio.h>\nint main(void){ int *p = 0; *p = 5; return 0; }\n', 'SIGSEGV', /Segmentation fault/],
     // ARM: PRABHA ka divide-by-zero trap → SIGTRAP (x86 par CPU khud SIGFPE deta hai)
-    ['divzero.c', '#include <stdio.h>\nint main(int c, char **v){ volatile int z = c - 1; printf("%d\\n", 10 / z); return 0; }\n', process.arch === 'arm64' && !win ? 'SIGTRAP' : 'SIGFPE', /0 se divide/],
+    ['divzero.c', '#include <stdio.h>\nint main(int c, char **v){ volatile int z = c - 1; printf("%d\\n", 10 / z); return 0; }\n', process.arch === 'arm64' && !win ? 'SIGTRAP' : 'SIGFPE', /division by zero/i],
     ['stack.c', 'int f(int n){ volatile char big[4096]; big[0] = (char)n; return f(n + 1) + big[0]; }\nint main(void){ return f(0); }\n', win ? 'STACK' : 'SIGSEGV', win ? /Stack overflow/ : /Segmentation fault/],
     ['abort.c', '#include <stdlib.h>\nint main(void){ abort(); }\n', 'SIGABRT', /abort/]
   ];
@@ -83,7 +83,7 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
   ok('normal exit 3 → no crash text', explainExit({ code: 3, signal: null, platform: 'linux' }) === null);
   ok('Windows 0xC0000005 → segfault text', explainExit({ code: 3221225477, platform: 'win32' }).name === 'SIGSEGV');
   ok('Windows 0xC00000FD → stack overflow', explainExit({ code: -1073741571, platform: 'win32' }).name === 'STACK');
-  ok('SIGTRAP mentions both divide-by-zero and NULL pointer', /0 se divide/.test(explainExit({ signal: 'SIGTRAP' }).title) && /NULL/.test(explainExit({ signal: 'SIGTRAP' }).title));
+  ok('SIGTRAP mentions both divide-by-zero and NULL pointer', /division by zero/i.test(explainExit({ signal: 'SIGTRAP' }).title) && /NULL/.test(explainExit({ signal: 'SIGTRAP' }).title));
 
   console.log('\n[console] PRABHA Console with a real interactive program');
   {

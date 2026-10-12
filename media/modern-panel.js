@@ -139,12 +139,10 @@
     const T = (hi, enT) => (en ? enT : hi);
 
     // header + controls
-    const langSel = el('select', { onchange: e => vsc.postMessage({ t: 'lang', lang: e.target.value }) },
-      el('option', { value: 'hi', selected: !en }, 'Hinglish'), el('option', { value: 'en', selected: en }, 'English'));
     app.append(el('div', { class: 'top' },
       el('div', { class: 'brand' }, el('span', { class: 'logo' }, 'P'), el('div', {}, el('h1', {}, 'PRABHA · Turbo → Modern'), el('div', { class: 'muted' }, m.file))),
       el('div', { class: 'controls' },
-        el('label', {}, T('Bhasha ', 'Language '), langSel))));
+        )));
 
     // summary
     const n = m.changes.length;
