@@ -22,7 +22,7 @@ const path = require('path');
 const toolchain = require('./lib/toolchain');
 const { createRouter } = require('./lib/stream');
 
-const VERSION = '5.0.0';
+const VERSION = '5.0.1';
 let panel;            // the one PRABHA screen
 let child;            // running program
 let out;              // output channel
@@ -253,7 +253,9 @@ async function runCurrent(target) {
   child = cp.spawn(bin, [], {
     cwd: path.dirname(file),
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-    env: tc.env
+    // runtime ko saaf batao ki protocol fd 3 par bhejo (Windows par fd 3 nahi
+    // hota, wahan stdout + lib/stream.js router)
+    env: process.platform === 'win32' ? tc.env : { ...tc.env, PRABHA_PROTO_FD: '3' }
   });
   status.text = '$(run) PRABHA running';
   const started = Date.now();

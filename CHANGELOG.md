@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.0.1 — 2026-10-12
+
+### Fixed
+
+- **Blank panel when fd 3 was already open.** The runtime used to send frames to
+  fd 3 whenever fd 3 happened to be open. Some shells, IDEs and the macOS CI
+  runner leave fd 3 open, so every frame went into that unrelated descriptor and
+  nothing was drawn. The runtime now uses fd 3 only when the extension says so
+  with `PRABHA_PROTO_FD=3`, and falls back to stdout otherwise.
+- Verified by running the whole suite with fd 3 deliberately inherited
+  (`exec 3>/dev/null`): all tests pass; Windows (MinGW + Wine) 13/13.
+
+
 ## 5.0.0 — 2026-10-12
 
 ### Added — in-built compiler

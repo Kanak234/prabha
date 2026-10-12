@@ -60,7 +60,7 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   const ext = require(path.join(root, 'extension.js'));
   ext.activate(mock.context(root));
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  ok(pkg.version === '5.0.0', 'version is 5.0.0');
+  ok(pkg.version === '5.0.1', 'version is 5.0.1');
   ok(pkg.contributes.commands.every(c => vscode._commands.has(c.command)), 'every command in package.json is implemented');
 
   // asli example chalao

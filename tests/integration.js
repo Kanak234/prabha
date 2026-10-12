@@ -25,7 +25,7 @@ int main(){
 }`);
 cp.execSync('gcc -std=c99 -I runtime /tmp/it.c runtime/prabha_core.c -o /tmp/it -lm');
 
-const child = cp.spawn('/tmp/it', [], { stdio: ['pipe','pipe','pipe','pipe'] });
+const child = cp.spawn('/tmp/it', [], { stdio: ['pipe','pipe','pipe','pipe'], env: { ...process.env, PRABHA_PROTO_FD: '3' } });
 let proto = '', plain = '', inputRequests = 0, frames = 0, sawInit = false, sawEnd = false;
 
 child.stdio[3].on('data', d => {

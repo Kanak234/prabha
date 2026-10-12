@@ -57,7 +57,7 @@ static void pr_sleep_ms(unsigned ms) { struct timespec t = { ms / 1000u, (long)(
 #define PR_W 640
 #define PR_H 480
 #define PR_PAGES 4
-#define PR_VERSION "5.0.0"
+#define PR_VERSION "5.0.1"
 
 /* ── state ───────────────────────────────────────────────────── */
 
@@ -148,10 +148,12 @@ static int proto_fd(void) {
     if (g_proto_fd != -1) return g_proto_fd;
     const char *env = getenv("PRABHA_PROTO_FD");
     if (env && *env) { g_proto_fd = atoi(env); return g_proto_fd; }
-#ifndef _WIN32
-    /* fd 3 exists when the extension opened the extra pipe */
-    if (fcntl(3, F_GETFD) != -1) { g_proto_fd = 3; return 3; }
-#endif
+    /*
+     * fd 3 sirf tab, jab extension PRABHA_PROTO_FD=3 bataye. Pehle "fd 3 khula
+     * hai to wahi pipe hai" maan lete the — par macOS CI runner, kuch shells aur
+     * IDEs fd 3 pehle se khula chhod dete hain, aur saare frames us anjaan fd mein
+     * chale jaate the (panel khaali, test ko 0 frames).
+     */
     g_proto_fd = 1;
     return 1;
 }

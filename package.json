@@ -2,7 +2,7 @@
   "name": "prabha",
   "displayName": "PRABHA — Turbo C graphics.h in VS Code",
   "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code — complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox. Now with an in-built compiler: no gcc? PRABHA installs one in one click.",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "publisher": "KANAKPRABHAKAR",
   "license": "MIT",
   "icon": "media/icon.png",
