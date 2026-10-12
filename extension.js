@@ -1,5 +1,11 @@
 /*
- * PRABHA 3.0.0 — Turbo C graphics.h / conio.h inside VS Code.
+ * PRABHA 5.0.0 — Turbo C graphics.h / conio.h inside VS Code.
+ *
+ * 5.0.0: in-built compiler. PRABHA ab khud compiler dhoondhta hai (PATH,
+ * CodeBlocks/MSYS2/TDM/WinGet folders) aur na mile to Windows par EK click mein
+ * apna GCC le aata hai (lib/toolchain.js). macOS/Linux par sahi install command
+ * terminal mein khol deta hai. Windows ka stdout protocol bhi ab line-level par
+ * route hota hai (lib/stream.js) — frames tootte nahi, printf ka text gum nahi hota.
  *
  * The runtime (runtime/prabha_core.c) implements the whole BGI + conio
  * surface against a 640x480 16-colour framebuffer and streams RLE frames
@@ -13,16 +19,22 @@ const cp = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const toolchain = require('./lib/toolchain');
+const { createRouter } = require('./lib/stream');
 
+const VERSION = '5.0.0';
 let panel;            // the one PRABHA screen
 let child;            // running program
 let out;              // output channel
 let status;
 let extRoot;
-let coreObj;          // cached compiled prabha_core.o per session
+const coreObjs = new Map(); // compiler path → compiled prabha_core.o (session cache)
+let storageDir;       // PRABHA ka apna GCC yahan rehta hai (globalStorage)
+let cachedTc;         // last detected toolchain
 
 function activate(context) {
   extRoot = context.extensionPath;
+  storageDir = context.globalStorageUri ? context.globalStorageUri.fsPath : path.join(os.homedir(), '.prabha');
   out = vscode.window.createOutputChannel('PRABHA');
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
   status.command = 'prabha.showOutput';
@@ -30,7 +42,10 @@ function activate(context) {
     vscode.commands.registerCommand('prabha.run', target => runCurrent(target)),
     vscode.commands.registerCommand('prabha.stop', () => stopProgram('stopped from the command')),
     vscode.commands.registerCommand('prabha.showOutput', () => out.show(true)),
-    vscode.commands.registerCommand('prabha.openExample', () => openExample(context))
+    vscode.commands.registerCommand('prabha.openExample', () => openExample(context)),
+    vscode.commands.registerCommand('prabha.installCompiler', () => installCompiler(true)),
+    vscode.commands.registerCommand('prabha.compilerInfo', () => compilerInfo()),
+    vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('prabha')) cachedTc = undefined; })
   );
 }
 
@@ -39,6 +54,7 @@ function cfg() {
   return {
     cc: c.get('cCompiler', 'gcc'),
     cxx: c.get('cppCompiler', 'g++'),
+    toolchainUrl: c.get('toolchainUrl', ''),
     flags: c.get('extraFlags', ''),
     scale: c.get('scale', 1.5),
     keepOpen: c.get('keepPanelOpenOnExit', true),
@@ -46,12 +62,91 @@ function cfg() {
   };
 }
 
-function which(cmd) {
-  try {
-    const probe = process.platform === 'win32' ? 'where' : 'which';
-    const r = cp.execFileSync(probe, [cmd], { encoding: 'utf8' });
-    return r.split(/\r?\n/)[0].trim();
-  } catch { return ''; }
+/* ───────────── compiler (in-built toolchain) ───────────── */
+
+/**
+ * Kaam karne wala compiler lao. Na mile to user se ek click mein install karwao.
+ * Return: toolchain object ya null (user ne mana kiya / install fail).
+ */
+async function ensureToolchain(isCpp) {
+  const conf = cfg();
+  if (!cachedTc) cachedTc = toolchain.detect({ cc: conf.cc, cxx: conf.cxx }, storageDir);
+  if (cachedTc && (!isCpp || cachedTc.cxx)) return cachedTc;
+  const ok = await installCompiler(false, isCpp);
+  return ok ? cachedTc : null;
+}
+
+/** Compiler install flow — Windows: PRABHA GCC; macOS: Xcode tools; Linux: package manager */
+async function installCompiler(explicit, isCpp) {
+  const need = isCpp ? 'C++ compiler (g++)' : 'C compiler (gcc)';
+  if (process.platform === 'win32') {
+    const pick = await vscode.window.showInformationMessage(
+      'PRABHA ko ' + need + ' chahiye. PRABHA apna GCC ek click mein install kar sakta hai (' + toolchain.WINLIBS.version +
+      ', ~' + toolchain.WINLIBS.approxMB + ' MB, sirf ek baar, sirf PRABHA ke folder mein — system PATH nahi chhedta).',
+      { modal: !explicit }, 'Install PRABHA GCC', 'Mera MinGW folder chuno');
+    if (pick === 'Mera MinGW folder chuno') return chooseCompilerFolder();
+    if (pick !== 'Install PRABHA GCC') return false;
+    try {
+      await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PRABHA: GCC install ho raha hai', cancellable: true }, async (progress, token) => {
+        let last = 0;
+        await toolchain.installWindows(storageDir, {
+          url: cfg().toolchainUrl || undefined,
+          isCancelled: () => token.isCancellationRequested,
+          log: s => out.appendLine('[toolchain] ' + s),
+          onProgress: (got, total) => {
+            const pct = total ? Math.floor(got * 100 / total) : 0;
+            if (pct > last) { progress.report({ increment: pct - last, message: Math.round(got / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB' }); last = pct; }
+          }
+        });
+        progress.report({ message: 'extract ho gaya, check kar raha hoon…' });
+      });
+    } catch (e) {
+      out.appendLine('[toolchain] install failed: ' + (e.message || e));
+      out.show(true);
+      vscode.window.showErrorMessage('PRABHA: GCC install nahi ho paya — ' + (e.message || e) + '. Internet check karo, ya "Mera MinGW folder chuno" try karo.');
+      return false;
+    }
+    cachedTc = toolchain.detect({ cc: cfg().cc, cxx: cfg().cxx }, storageDir);
+    if (cachedTc) vscode.window.showInformationMessage('PRABHA: compiler ready — ' + cachedTc.version);
+    return !!cachedTc;
+  }
+  const hint = toolchain.installHint();
+  const pick = await vscode.window.showInformationMessage(
+    'PRABHA ko ' + need + ' chahiye. Ek command se install ho jaayega: ' + hint.command + (hint.note ? ' — ' + hint.note : ''),
+    hint.label + ' (terminal mein)', 'Compiler folder chuno');
+  if (pick === 'Compiler folder chuno') return chooseCompilerFolder();
+  if (!pick) return false;
+  const t = vscode.window.createTerminal({ name: 'PRABHA · compiler install' });
+  t.show();
+  t.sendText(hint.command);
+  vscode.window.showInformationMessage('Install khatam hone ke baad PRABHA: Run dobara dabao.');
+  return false;
+}
+
+/** User apna compiler folder (…\\bin) chune → settings mein save */
+async function chooseCompilerFolder() {
+  const pick = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Is folder mein gcc hai' });
+  if (!pick || !pick[0]) return false;
+  const bin = pick[0].fsPath;
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const cc = path.join(bin, 'gcc' + ext), cxx = path.join(bin, 'g++' + ext);
+  if (!toolchain.works(cc, toolchain.envWith(bin))) {
+    vscode.window.showErrorMessage('PRABHA: is folder mein chalne wala gcc' + ext + ' nahi mila (' + bin + ').');
+    return false;
+  }
+  const c = vscode.workspace.getConfiguration('prabha');
+  await c.update('cCompiler', cc, vscode.ConfigurationTarget.Global);
+  await c.update('cppCompiler', cxx, vscode.ConfigurationTarget.Global);
+  cachedTc = toolchain.detect({ cc, cxx }, storageDir);
+  return !!cachedTc;
+}
+
+function compilerInfo() {
+  cachedTc = toolchain.detect({ cc: cfg().cc, cxx: cfg().cxx }, storageDir);
+  if (!cachedTc) { installCompiler(true); return; }
+  out.appendLine('PRABHA compiler: ' + cachedTc.version + '\n  C:   ' + cachedTc.cc + '\n  C++: ' + (cachedTc.cxx || '(not found)') + '\n  from: ' + cachedTc.source);
+  out.show(true);
+  vscode.window.showInformationMessage('PRABHA compiler: ' + cachedTc.version + ' (' + cachedTc.source + ')');
 }
 
 async function runCurrent(target) {
@@ -73,18 +168,16 @@ async function runCurrent(target) {
   stopProgram();
   const conf = cfg();
   const isCpp = ext !== '.c';
-  const cc = which(conf.cc) ? conf.cc : (which('cc') ? 'cc' : '');
-  const cxx = which(conf.cxx) ? conf.cxx : (which('c++') ? 'c++' : '');
+  const tc = await ensureToolchain(isCpp);
+  if (!tc) return;
+  const cc = tc.cc;
+  const cxx = tc.cxx;
   const driver = isCpp ? cxx : cc;
-  if (!cc || (isCpp && !cxx)) {
-    vscode.window.showErrorMessage(
-      'PRABHA needs ' + (isCpp ? 'a C++ compiler (g++)' : 'a C compiler (gcc)') +
-      '. Install it (Linux: build-essential, Windows: MinGW-w64/MSYS2, macOS: xcode-select --install) or set prabha.cCompiler / prabha.cppCompiler.');
-    return;
-  }
+  const isClang = /clang/i.test(tc.version);
 
   out.clear();
-  out.appendLine('· PRABHA 3.0.0 · ' + file);
+  out.appendLine('· PRABHA ' + VERSION + ' · ' + file);
+  out.appendLine('compiler: ' + tc.version + ' (' + tc.source + ')');
   status.text = '$(sync~spin) PRABHA compiling';
   status.show();
 
@@ -93,11 +186,13 @@ async function runCurrent(target) {
   const bin = path.join(work, 'program' + (process.platform === 'win32' ? '.exe' : ''));
 
   try {
-    // 1) the runtime object is compiled once per session, always as C
+    // 1) the runtime object is compiled once per session per compiler, always as C
+    let coreObj = coreObjs.get(cc);
     if (!coreObj || !fs.existsSync(coreObj)) {
-      coreObj = path.join(os.tmpdir(), 'prabha_core_' + process.pid + '.o');
+      coreObj = path.join(os.tmpdir(), 'prabha_core_' + process.pid + '_' + coreObjs.size + '.o');
       await exec(cc, ['-std=c99', '-O2', '-I', runtime, '-c',
-        path.join(runtime, 'prabha_core.c'), '-o', coreObj]);
+        path.join(runtime, 'prabha_core.c'), '-o', coreObj], tc.env);
+      coreObjs.set(cc, coreObj);
       out.appendLine('runtime compiled with ' + cc);
     }
 
@@ -131,13 +226,17 @@ async function runCurrent(target) {
 
     const args = [std];
     if (legacy) {
-      args.push('-fpermissive',
+      if (!isClang) args.push('-fpermissive');   // clang ka equivalent nahi; uske bina bhi chalta hai
+      args.push(
         '-I', compatDir,
         '-include', path.join(compatDir, 'prabha_cpp_prelude.h'));
     }
     args.push('-I', runtime, srcToCompile, coreObj, '-o', bin, '-lm', ...extra);
+    // Windows + MinGW: static link, taaki program ko libstdc++-6.dll / libgcc DLL
+    // dhoondhne na pade ("The code execution cannot proceed..." error).
+    if (tc.mingw) args.push('-static');
 
-    await exec(driver, args);
+    await exec(driver, args, tc.env);
     out.appendLine('program compiled with ' + driver +
       (legacy ? ' (Turbo C++ compatibility on)' : '') + '\n');
   } catch (e) {
@@ -153,33 +252,24 @@ async function runCurrent(target) {
   // fd 3 carries the frame protocol; stdout stays the program's own.
   child = cp.spawn(bin, [], {
     cwd: path.dirname(file),
-    stdio: ['pipe', 'pipe', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+    env: tc.env
   });
   status.text = '$(run) PRABHA running';
   const started = Date.now();
 
-  let acc = '';
-  const onProto = chunk => {
-    acc += chunk.toString('latin1');
-    let nl;
-    while ((nl = acc.indexOf('\n')) !== -1) {
-      const line = acc.slice(0, nl); acc = acc.slice(nl + 1);
-      if (line.startsWith('##PRABHA##')) {
-        try { panel && panel.webview.postMessage({ t: 'proto', msg: JSON.parse(line.slice(10)) }); }
-        catch { /* half-written line at exit — ignore */ }
-      }
-    }
-  };
-  if (child.stdio[3]) child.stdio[3].on('data', onProto);
-  child.stdout.on('data', d => {
-    // programs without the extension pipe fall back to stdout — split it
-    const text = d.toString('latin1');
-    if (text.includes('##PRABHA##')) onProto(d);
-    else out.append(text);
-  });
+  // Protocol message → panel. fd 3 (Linux/macOS) aur stdout (Windows) dono
+  // isi router se guzarte hain; line beech mein tooti ho tab bhi sahi jodta hai.
+  const toPanel = msg => { if (panel) panel.webview.postMessage({ t: 'proto', msg }); };
+  const fd3 = createRouter(() => { /* fd 3 par sirf protocol aata hai */ }, toPanel);
+  const so = createRouter(text => out.append(text), toPanel);
+  if (child.stdio[3]) child.stdio[3].on('data', d => fd3.push(d));
+  child.stdout.on('data', d => so.push(d));
   child.stderr.on('data', d => out.append(d.toString()));
   child.stdin.on('error', () => {});
-  child.on('exit', code => {
+  // 'close' (na ki 'exit'): tab tak saara stdout/fd3 data padh liya gaya hota hai
+  child.on('close', code => {
+    fd3.end(); so.end();
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     out.appendLine('\nprogram exited with code ' + code + ' after ' + secs + 's');
     status.text = (code === 0 ? '$(check)' : '$(error)') + ' PRABHA · exit ' + code;
@@ -189,9 +279,9 @@ async function runCurrent(target) {
   });
 }
 
-function exec(cmd, args) {
+function exec(cmd, args, env) {
   return new Promise((resolve, reject) => {
-    cp.execFile(cmd, args, { maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    cp.execFile(cmd, args, { maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) reject(new Error((stderr || stdout || String(err)).trim()));
       else resolve();
     });

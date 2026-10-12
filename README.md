@@ -103,17 +103,27 @@ Your source file on disk is never modified — the adaptation happens on a
 temporary copy at compile time. If you only write standard modern C++ and want
 strict compilation, set `prabha.turboCppCompatibility` to `false`.
 
-## Requirements
+## Compiler — built in (new in 5.0)
 
-A C compiler on your PATH:
+You don't need to set anything up. When you press Run, PRABHA finds a compiler
+by itself:
 
-| OS | Install |
+1. your `prabha.cCompiler` / `prabha.cppCompiler` setting, if you changed it
+2. `gcc` / `cc` / `clang` on your PATH
+3. compilers that are installed but **not** on PATH — CodeBlocks' MinGW, MSYS2,
+   TDM-GCC, Dev-C++, WinGet's WinLibs (the usual college-lab setups)
+4. PRABHA's own GCC, if you installed it before
+
+If none is found:
+
+| OS | What PRABHA does |
 |---|---|
-| Linux | `sudo apt install build-essential` |
-| macOS | `xcode-select --install` |
-| Windows | MinGW-w64 (MSYS2) or the Build Tools |
+| Windows | One click **Install PRABHA GCC** — downloads GCC 16.2 (WinLibs, ~260 MB, once), checks its SHA-256, and keeps it inside PRABHA's own folder. Your system PATH is not touched. |
+| macOS | One click opens `xcode-select --install` (Apple's installer). |
+| Linux | One click opens a terminal with the right command for your distro (`apt`, `dnf`, `pacman`, `zypper`, `apk`). |
 
-Point `prabha.cCompiler` / `prabha.cppCompiler` at something else if you like.
+Already have MinGW somewhere? Choose **Mera MinGW folder chuno** and point at its
+`bin` folder. **PRABHA: Which compiler am I using?** shows what is being used.
 
 ## Commands
 
@@ -123,10 +133,12 @@ Point `prabha.cCompiler` / `prabha.cppCompiler` at something else if you like.
 | PRABHA: Stop Program | — |
 | PRABHA: Open Example… | — |
 | PRABHA: Show Program Output | — |
+| PRABHA: Install / Choose Compiler | — |
+| PRABHA: Which compiler am I using? | — |
 
 ## Settings
 
-`prabha.cCompiler` · `prabha.cppCompiler` · `prabha.extraFlags` ·
+`prabha.cCompiler` · `prabha.cppCompiler` · `prabha.extraFlags` · `prabha.toolchainUrl` ·
 `prabha.scale` (panel size, default 1.5×) · `prabha.keepPanelOpenOnExit`
 
 ## Examples included

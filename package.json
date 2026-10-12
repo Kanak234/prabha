@@ -1,8 +1,8 @@
 {
   "name": "prabha",
   "displayName": "PRABHA — Turbo C graphics.h in VS Code",
-  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code — complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox.",
-  "version": "3.1.1",
+  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code — complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox. Now with an in-built compiler: no gcc? PRABHA installs one in one click.",
+  "version": "5.0.0",
   "publisher": "KANAKPRABHAKAR",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -15,13 +15,17 @@
     "Other"
   ],
   "keywords": [
-    "turbo c",
-    "graphics.h",
-    "conio.h",
     "bgi",
     "borland",
+    "compiler",
+    "conio.h",
     "dos",
-    "graphics"
+    "gcc",
+    "graphics",
+    "graphics.h",
+    "mingw",
+    "turbo c",
+    "windows"
   ],
   "repository": {
     "type": "git",
@@ -50,6 +54,14 @@
       {
         "command": "prabha.openExample",
         "title": "PRABHA: Open Example…"
+      },
+      {
+        "command": "prabha.installCompiler",
+        "title": "PRABHA: Install / Choose Compiler"
+      },
+      {
+        "command": "prabha.compilerInfo",
+        "title": "PRABHA: Which compiler am I using?"
       }
     ],
     "menus": {
@@ -82,12 +94,12 @@
         "prabha.cCompiler": {
           "type": "string",
           "default": "gcc",
-          "description": "C compiler used for .c files and the PRABHA runtime."
+          "description": "C compiler for .c files and the PRABHA runtime. Leave as 'gcc' to auto-detect (PATH, CodeBlocks/MSYS2/TDM/WinGet folders, or PRABHA's own GCC)."
         },
         "prabha.cppCompiler": {
           "type": "string",
           "default": "g++",
-          "description": "C++ compiler used for .cpp files."
+          "description": "C++ compiler for .cpp files. Leave as 'g++' to auto-detect."
         },
         "prabha.extraFlags": {
           "type": "string",
@@ -108,6 +120,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Run classic **Turbo C++ / Borland C++** programs unchanged on your modern compiler. When on, `#include <iostream.h>`, unqualified `cout`/`cin`, and `void main()` all work without editing your source. Turn off if you only write standard modern C++ and want strict compilation."
+        },
+        "prabha.toolchainUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Windows only: download URL of a WinLibs GCC .zip to use instead of the pinned version (advanced; no checksum check for custom URLs)."
         }
       }
     }

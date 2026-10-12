@@ -23,9 +23,19 @@
 #include <math.h>
 #include <time.h>
 
+/* M_PI is not part of strict C99 — MinGW (Windows) and some libcs hide it
+ * under -std=c99, which used to stop the runtime compiling on Windows. */
+#ifndef M_PI
+#  define M_PI 3.14159265358979323846
+#endif
+
 #ifdef _WIN32
 #  include <io.h>
+#  include <fcntl.h>
 #  include <windows.h>
+   /* -I runtime puts PRABHA's own conio.h first, so the CRT's _kbhit
+    * prototype never arrives; declare it ourselves (msvcrt/ucrt export it). */
+   int __cdecl _kbhit(void);
 #  define pr_write _write
 #  define pr_read  _read
 #  define pr_isatty _isatty
@@ -47,7 +57,7 @@ static void pr_sleep_ms(unsigned ms) { struct timespec t = { ms / 1000u, (long)(
 #define PR_W 640
 #define PR_H 480
 #define PR_PAGES 4
-#define PR_VERSION "3.0.0-final"
+#define PR_VERSION "5.0.0"
 
 /* ── state ───────────────────────────────────────────────────── */
 
@@ -117,7 +127,24 @@ static long now_ms(void) {
 #endif
 }
 
+/*
+ * Windows: stdin/stdout open in TEXT mode by default. Text mode turns every
+ * "\n" we write into "\r\n" and, worse, makes _read() on a pipe hold back a
+ * lone '\r' (the Enter key) while it waits to see if a '\n' follows — so
+ * getch() never returned for Enter. Binary mode gives us the raw bytes.
+ */
+static void pr_platform_init(void) {
+#ifdef _WIN32
+    static int done = 0;
+    if (done) return;
+    done = 1;
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+}
+
 static int proto_fd(void) {
+    pr_platform_init();
     if (g_proto_fd != -1) return g_proto_fd;
     const char *env = getenv("PRABHA_PROTO_FD");
     if (env && *env) { g_proto_fd = atoi(env); return g_proto_fd; }
@@ -140,6 +167,10 @@ static void proto_raw(const char *s, size_t n) {
 }
 
 static void proto_line(const char *json) {
+    /* Protocol shares stdout with printf when there is no fd 3 (Windows, or a
+     * bare terminal). Flush the program's own buffered text first so the two
+     * streams stay in order and a protocol line never lands mid-printf. */
+    if (proto_fd() == 1) fflush(stdout);
     proto_raw("##PRABHA##", 10);
     proto_raw(json, strlen(json));
     proto_raw("\n", 1);
@@ -1001,6 +1032,7 @@ void nosound(void) { proto_line("{\"t\":\"sound\",\"hz\":0}"); }
 /* ── keyboard (conio) ────────────────────────────────────────── */
 
 static int stdin_ready(void) {
+    pr_platform_init();
 #ifdef _WIN32
     HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
     DWORD avail = 0;

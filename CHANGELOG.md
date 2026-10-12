@@ -1,5 +1,48 @@
 # Changelog
 
+## 5.0.0 — 2026-10-12
+
+### Added — in-built compiler
+
+- **No more "gcc not found".** PRABHA finds a compiler on its own: your setting,
+  PATH, then the places students actually have one installed without PATH
+  (CodeBlocks' MinGW, MSYS2, TDM-GCC, Dev-C++, WinGet WinLibs).
+- **Windows: one-click PRABHA GCC.** If nothing is found, PRABHA downloads a pinned
+  GCC 16.2.0 (WinLibs, UCRT, x86_64), verifies its SHA-256 before using it, and
+  installs it inside its own storage folder — no PATH or system change.
+- **macOS / Linux:** one click opens the right install command in a terminal
+  (`xcode-select --install`, or apt / dnf / pacman / zypper / apk by distro).
+- **PRABHA: Install / Choose Compiler** and **PRABHA: Which compiler am I using?**
+- Windows programs are linked `-static`, so they never stop with a missing
+  `libstdc++-6.dll` / `libgcc` DLL error.
+
+### Fixed — Windows
+
+- **The runtime did not compile on Windows at all.** `M_PI` is not defined under
+  `-std=c99` by MinGW, and `_kbhit` had no prototype. Both fixed; the runtime now
+  builds with `-Wall` and zero warnings on MinGW.
+- **`getch()` hung on Enter.** Windows opens stdin in text mode, where reading a
+  lone `\r` from a pipe waits for a `\n` that never comes. stdin/stdout are now
+  switched to binary mode.
+- **Frames broke and printf text vanished on Windows.** Without fd 3 the protocol
+  shares stdout with the program; the old code routed whole pipe *chunks*, so a
+  frame line split across two chunks was dumped into Output as JSON and the frame
+  was lost, and printf text sharing a chunk with a frame disappeared. Output is
+  now routed line by line (`lib/stream.js`), including a marker in the middle of a
+  line after `printf("Enter: ")`. The runtime also flushes the program's stdout
+  before every protocol line so the two stay in order.
+
+### Verified
+
+- Linux: full suite (`tests/run-all.sh`) — runtime `-Wall -Wextra` clean, every
+  example, API coverage frames, conio frames, fd-3 integration.
+- Windows (MinGW build run under Wine, and native Windows in CI): runtime and all
+  7 examples compile; K, RIGHT arrow (0,77) and Enter (13) decode with no hang;
+  frames arrive intact even when stdout is cut into 7-byte chunks.
+- Extension wiring on mock VS Code: commands, compiler detect, install prompts,
+  a real example compiled and streaming frames to the panel.
+
+
 ## 3.1.1
 
 ### Added
