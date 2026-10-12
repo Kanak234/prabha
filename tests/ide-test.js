@@ -22,6 +22,10 @@ let pass = 0, fail = 0;
 // ok(name, cond, detail) ya ok(cond, name, detail) — dono order chalte hain
 const ok = (a, b, x) => { const [n, c] = typeof a === 'string' ? [a, b] : [b, a]; if (c) { pass++; console.log('  ok   ' + n); } else { fail++; console.log('  FAIL ' + n + (x ? '\n       ' + String(x).split('\n').join('\n       ') : '')); } };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha ide test हिंदी '));   // space + Hindi path on purpose
+// Ye test khud compiler seedha chalata hai (PRABHA ke build() ke bina). MinGW Unicode
+// path nahi likh pata — isliye Windows par raw compiles ASCII folder mein. Hindi-path
+// handling PRABHA ke build() ka kaam hai, woh tests/build-test.js check karta hai.
+const rawTmp = process.platform === 'win32' ? fs.mkdtempSync(path.join(os.tmpdir(), 'prabha-ide-raw-')) : tmp;
 const has = c => { try { cp.execFileSync(c, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } };
 const CC = process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has);
 const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
@@ -63,9 +67,12 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
     ['abort.c', '#include <stdlib.h>\nint main(void){ abort(); }\n', 'SIGABRT', /abort/]
   ];
   for (const [name, src, want, re] of crashes) {
-    const f = path.join(tmp, name), bin = path.join(tmp, name.replace(/\.c$/, '') + (win ? '.exe' : ''));
+    const f = path.join(rawTmp, name), bin = path.join(rawTmp, name.replace(/\.c$/, '') + (win ? '.exe' : ''));
     fs.writeFileSync(f, src);
-    const c = cp.spawnSync(CC, ['-O0', f, '-o', bin], { encoding: 'utf8' });
+    // Same flags as PRABHA's build (ARM: divide-by-zero trap)
+    const { trapFlags } = require('../lib/build');
+    const isClangCC = /clang/.test(CC) || process.platform === 'darwin';
+    const c = cp.spawnSync(CC, ['-O0', ...trapFlags(isClangCC), f, '-o', bin], { encoding: 'utf8' });
     if (c.status !== 0) { ok(name + ' compiles', false, c.stderr); continue; }
     const r = cp.spawnSync(bin, [], { encoding: 'utf8', timeout: 20000 });
     const e = explainExit({ code: r.status, signal: r.signal, platform: process.platform });
@@ -78,7 +85,7 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
 
   console.log('\n[console] PRABHA Console with a real interactive program');
   {
-    const f = path.join(tmp, 'ask.c'), bin = path.join(tmp, 'ask' + (win ? '.exe' : ''));
+    const f = path.join(rawTmp, 'ask.c'), bin = path.join(rawTmp, 'ask' + (win ? '.exe' : ''));
     fs.writeFileSync(f, '#include <stdio.h>\nint main(void){ int a, b; printf("Enter a: "); scanf("%d", &a); printf("Enter b: "); scanf("%d", &b); printf("Sum = %d\\n", a + b); return 7; }\n');
     const c = cp.spawnSync(CC, ['-include', path.join(root, 'runtime', 'prabha_unbuffered.h'), f, '-o', bin], { encoding: 'utf8' });
     ok('unbuffered prelude compiles in', c.status === 0, c.stderr);
@@ -105,7 +112,7 @@ const CXX = process.env.PRABHA_TEST_CXX || ['g++', 'clang++', 'c++'].find(has);
     ok('any key closes the console', closed === 7);
   }
   {
-    const f = path.join(tmp, 'boom.c'), bin = path.join(tmp, 'boom' + (win ? '.exe' : ''));
+    const f = path.join(rawTmp, 'boom.c'), bin = path.join(rawTmp, 'boom' + (win ? '.exe' : ''));
     fs.writeFileSync(f, '#include <stdio.h>\nint main(void){ int a[3]; int *p = 0; printf("before\\n"); *p = a[0]; return 0; }\n');
     cp.spawnSync(CC, ['-include', path.join(root, 'runtime', 'prabha_unbuffered.h'), f, '-o', bin]);
     let screen = ''; let res; const p = new Promise(r => { res = r; });
