@@ -43,10 +43,10 @@ PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code
 
 ### Fixed
 
-- **Windows: Hindi (non-ASCII) folder or username.** MinGW gcc/ld cannot open such
+- **Windows: Hindi (non-ASCII) folder, or a username with a space** ("Rahul Kumar"). MinGW gcc/ld cannot open non-ASCII
   paths ("cannot open output file …\\?????\\a.exe"). Builds now run in an ASCII work
   folder (source and neighbouring headers copied when needed), PRABHA's runtime and
-  toolchain are kept in an ASCII folder too, and errors still point at your file.
+  toolchain are kept in an ASCII, space-free folder too (WinLibs GCC cannot run from a path with a space), and errors still point at your file.
 - **Hinglish error tips were missing on most Linux PCs.** GCC prints curly quotes
   (`‘;’`) in a UTF-8 locale; tips matched only straight quotes.
 - **Windows: `scanf`/`gets` got a stray `\\r` after `getch()`-style programs**, and
