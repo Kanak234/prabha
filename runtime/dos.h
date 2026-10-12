@@ -2,6 +2,17 @@
 #ifndef PRABHA_DOS_H
 #define PRABHA_DOS_H
 
+/*
+ * macOS/BSD (and glibc under _GNU_SOURCE, i.e. every g++ build) already declare
+ * POSIX `struct tm *getdate(const char *)` in <time.h>. Turbo C's getdate takes
+ * a `struct date *` — same name, different type, so the runtime did not compile
+ * on macOS at all ("conflicting types for 'getdate'"). Pull <time.h> in first,
+ * then route the Turbo C name to our own symbol: student code still writes
+ * getdate(&d) unchanged.
+ */
+#include <time.h>
+#define getdate prabha_getdate
+
 #ifdef __cplusplus
 extern "C" {
 #endif

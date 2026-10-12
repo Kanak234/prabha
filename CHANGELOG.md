@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **PRABHA did not compile on macOS at all** (since 3.1.1). macOS's `<time.h>`
+  declares POSIX `struct tm *getdate(const char *)`, which clashed with Turbo C's
+  `getdate(struct date *)` from `dos.h` ("conflicting types for 'getdate'").
+  The same clash hit any `.cpp` program that included both `<dos.h>` and
+  `<time.h>` with g++ on Linux. `dos.h` now includes `<time.h>` first and maps the
+  Turbo C name to PRABHA's own symbol — student code still calls `getdate(&d)`.
+
 - **Blank panel when fd 3 was already open.** The runtime used to send frames to
   fd 3 whenever fd 3 happened to be open. Some shells, IDEs and the macOS CI
   runner leave fd 3 open, so every frame went into that unrelated descriptor and
