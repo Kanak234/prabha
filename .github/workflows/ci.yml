@@ -98,6 +98,15 @@ jobs:
       - name: Router + toolchain + extension wiring
         run: node tests/ci.js extension-test node tests/extension-test.js
 
+      - name: PRABHA's own compiler on Windows — real WinLibs GCC + gdb download, verify, build, debug
+        if: runner.os == 'Windows'
+        run: node tests/ci.js winlibs-install node tests/winlibs-install-test.js
+
+      - name: Default mode (6.0) — first Run auto-installs PRABHA's compiler, then uses it
+        env:
+          PRABHA_TEST_TOOLCHAIN_MODE: bundled
+        run: node tests/ci.js extension-bundled node tests/extension-test.js
+
       - name: Validate JavaScript syntax
         shell: bash
         run: |

@@ -56,7 +56,7 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   /* ── 3. extension on mock VS Code ── */
   console.log('\n[extension] PRABHA on mock VS Code');
   const answers = [];
-  const vscode = mock.install({ answer: (m, b) => { answers.push({ m, b }); return undefined; } });
+  const vscode = mock.install({ config: { 'prabha.toolchain': process.env.PRABHA_TEST_TOOLCHAIN_MODE || 'auto' }, answer: (m, b) => { answers.push({ m, b }); return undefined; } });
   const ext = require(path.join(root, 'extension.js'));
   ext.activate(mock.context(root));
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -196,6 +196,11 @@ const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { 
   // compiler info + install flow (Linux/macOS: terminal command; Windows: GCC prompt)
   await vscode.commands.executeCommand('prabha.compilerInfo');
   ok(vscode._messages.some(m => /PRABHA compiler:/.test(m.m)), 'compiler info reports the detected compiler');
+  if ((process.env.PRABHA_TEST_TOOLCHAIN_MODE || 'auto') === 'bundled') {
+    // 6.0 default: pehle Run par PRABHA ka apna compiler apne aap install hua aur wahi use hua
+    const info = vscode._messages.filter(m => /PRABHA compiler:/.test(m.m)).pop();
+    ok(info && /\((prabha|prabha-zig)\)/.test(info.m), 'default mode used PRABHA\'s own compiler, auto-installed on first Run: ' + (info && info.m), info && info.m);
+  }
   await vscode.commands.executeCommand('prabha.installCompiler');
   const last = answers.pop() || { b: [] };
   ok(last.b.includes('Install PRABHA compiler') && last.b.length >= 2, 'install command offers PRABHA compiler on every OS (' + last.b.join(' | ') + ')');

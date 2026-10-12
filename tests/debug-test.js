@@ -21,6 +21,8 @@ const root = path.join(__dirname, '..');
 const win = process.platform === 'win32';
 let pass = 0, fail = 0;
 const ok = (name, c, x) => { if (c) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (x ? '\n       ' + String(x).slice(0, 1500).split('\n').join('\n       ') : '')); } };
+// PRABHA_TEST_GDB / PRABHA_TEST_CC: CI mein PRABHA ke apne toolchain (WinLibs gdb + gcc) se chalane ke liye
+const GDB = process.env.PRABHA_TEST_GDB || 'gdb';
 const has = c => { try { cp.execFileSync(c, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } };
 
 /* DAP client: inline session ya adapter process (Content-Length framing) */
@@ -105,7 +107,7 @@ async function scenario(backend) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha debug ' + backend + ' '));
   const file = path.join(dir, 'fact.c'), bin = path.join(dir, 'fact' + (win ? '.exe' : ''));
   fs.writeFileSync(file, SRC);
-  const cc = ['gcc', 'clang', 'cc'].find(has);
+  const cc = (process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has));
   const c = cp.spawnSync(cc, ['-g', '-O0', '-include', path.join(root, 'runtime', 'prabha_unbuffered.h'), file, '-o', bin], { encoding: 'utf8' });
   if (c.status !== 0) { ok(backend + ': fixture compiles', false, c.stderr); return; }
 
@@ -113,7 +115,7 @@ async function scenario(backend) {
   if (backend === 'gdb') {
     const s = new GdbDebugSession({ trace: process.env.PRABHA_DEBUG_TRACE ? x => console.log('      ' + x) : undefined });
     client = new Client(inlineTransport(s));
-    launchArgs = { program: bin, cwd: dir, gdbPath: 'gdb', console: 'internal' };
+    launchArgs = { program: bin, cwd: dir, gdbPath: GDB, console: 'internal' };
   } else {
     const dap = findLldbDap();
     client = new Client(processTransport(dap, []));
@@ -178,7 +180,7 @@ async function scenario(backend) {
   // step in / step out from main, stop at entry
   {
     let c2, args2;
-    if (backend === 'gdb') { const s = new GdbDebugSession(); c2 = new Client(inlineTransport(s)); args2 = { program: bin, cwd: dir, gdbPath: 'gdb', console: 'internal', stopAtEntry: true }; }
+    if (backend === 'gdb') { const s = new GdbDebugSession(); c2 = new Client(inlineTransport(s)); args2 = { program: bin, cwd: dir, gdbPath: GDB, console: 'internal', stopAtEntry: true }; }
     else { c2 = new Client(processTransport(findLldbDap(), [])); args2 = { program: bin, cwd: dir, stopOnEntry: false }; }
     try {
       await c2.req('initialize', { adapterID: 'prabha', linesStartAt1: true, columnsStartAt1: true, pathFormat: 'path' });
@@ -210,9 +212,9 @@ async function scenario(backend) {
   {
     const cf = path.join(dir, 'crash.c'), cbin = path.join(dir, 'crash' + (win ? '.exe' : ''));
     fs.writeFileSync(cf, CRASH);
-    cp.spawnSync(['gcc', 'clang', 'cc'].find(has), ['-g', '-O0', cf, '-o', cbin]);
+    cp.spawnSync((process.env.PRABHA_TEST_CC || ['gcc', 'clang', 'cc'].find(has)), ['-g', '-O0', cf, '-o', cbin]);
     let c3, args3;
-    if (backend === 'gdb') { c3 = new Client(inlineTransport(new GdbDebugSession())); args3 = { program: cbin, cwd: dir, gdbPath: 'gdb', console: 'internal' }; }
+    if (backend === 'gdb') { c3 = new Client(inlineTransport(new GdbDebugSession())); args3 = { program: cbin, cwd: dir, gdbPath: GDB, console: 'internal' }; }
     else { c3 = new Client(processTransport(findLldbDap(), [])); args3 = { program: cbin, cwd: dir }; }
     try {
       await c3.req('initialize', { adapterID: 'prabha', linesStartAt1: true, columnsStartAt1: true, pathFormat: 'path' });
@@ -235,7 +237,7 @@ async function gdbGoneRegression() {
   console.log('\n[debug] gdb exits under the adapter');
   const s = new GdbDebugSession();
   s.emit = () => {};
-  s.start('gdb');
+  s.start(GDB);
   await new Promise(r => setTimeout(r, 300));
   s.gdb.kill('SIGKILL');
   await new Promise(r => s.gdb.on('exit', r));
@@ -249,8 +251,8 @@ async function gdbGoneRegression() {
 
 (async () => {
   const want = process.argv[2];
-  if ((!want || want === 'gdb') && has('gdb')) await gdbGoneRegression();
-  if ((!want || want === 'gdb') && has('gdb')) { console.log('\n[debug] PRABHA gdb adapter'); await scenario('gdb'); }
+  if ((!want || want === 'gdb') && has(GDB)) await gdbGoneRegression();
+  if ((!want || want === 'gdb') && has(GDB)) { console.log('\n[debug] PRABHA gdb adapter'); await scenario('gdb'); }
   else if (!want || want === 'gdb') console.log('  - gdb not installed: skipped');
   if ((!want || want === 'lldb') && findLldbDap()) { console.log('\n[debug] lldb-dap (macOS path)'); await scenario('lldb'); }
   else if (!want || want === 'lldb') console.log('  - lldb-dap not found: skipped');

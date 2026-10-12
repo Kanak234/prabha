@@ -87,7 +87,7 @@ function cfg() {
   return {
     cc: c.get('cCompiler', 'gcc'),
     cxx: c.get('cppCompiler', 'g++'),
-    toolchain: c.get('toolchain', 'auto'),
+    toolchain: c.get('toolchain', 'bundled'),
     toolchainUrl: c.get('toolchainUrl', ''),
     flags: c.get('extraFlags', ''),
     scale: c.get('scale', 1.5),
@@ -110,7 +110,26 @@ function detectTc() {
 }
 
 /** Kaam karne wala compiler lao; na mile to ek click mein install karwao */
+let autoInstallTried = false;   // is session mein PRABHA compiler ka auto-install ek hi baar
+
 async function ensureToolchain(isCpp) {
+  const conf = cfg();
+  /*
+   * 6.0 default = 'bundled': PRABHA hamesha APNA compiler use kare (har student ka same,
+   * tested compiler — purane CodeBlocks/TDM gcc wale bugs nahi). Pehli baar wo apne aap
+   * install hota hai (progress dikhta hai, koi sawaal nahi). Internet na ho / cancel ho to
+   * PC par jo compiler hai usse kaam chalta hai — student kabhi atakta nahi.
+   */
+  if (conf.toolchain === 'bundled' && !autoInstallTried &&
+      !toolchain.detect({ cc: conf.cc, cxx: conf.cxx, toolchain: 'bundled' }, storageDir)) {
+    autoInstallTried = true;
+    cachedTc = undefined;
+    const ok = await installBundledWithProgress();
+    if (!ok) {
+      const sys = detectTc();
+      if (sys) vscode.window.showWarningMessage('PRABHA ka apna compiler abhi install nahi hua, isliye is PC ka compiler use ho raha hai: ' + sys.version + '. Baad mein "PRABHA: Install / Choose Compiler" se install kar sakte ho.');
+    }
+  }
   if (!cachedTc) cachedTc = detectTc();
   if (cachedTc && (!isCpp || cachedTc.cxx)) return cachedTc;
   const ok = await installCompiler(false, isCpp);
@@ -142,6 +161,13 @@ async function installCompiler(explicit, isCpp) {
     return false;
   }
   if (pick !== B_INSTALL) return false;
+  return installBundledWithProgress();
+}
+
+/** PRABHA ka apna compiler download + verify + install, progress notification ke saath */
+async function installBundledWithProgress() {
+  const info = toolchain.bundledInfo();
+  const B_FOLDER = 'Mera compiler folder chuno';
   try {
     await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PRABHA: ' + info.name + ' install ho raha hai', cancellable: true }, async (progress, token) => {
       let last = 0;

@@ -33,8 +33,30 @@ PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code
   a new tab, run either version, and a **same-output check** (old in Turbo mode
   vs new with strict `-std=c++17 -pedantic-errors` / `-std=c11`).
 
+### Changed
+
+- **PRABHA's own compiler is now the default** (`prabha.toolchain: "bundled"`). The
+  first Run installs it automatically (progress shown, no questions); every student
+  gets the same tested compiler instead of whatever old MinGW / TDM / CodeBlocks gcc
+  is on the PC. Offline or cancelled → PRABHA falls back to a compiler on the PC and
+  says so. `auto` and `system` are still available.
+
 ### Fixed
 
+- **Windows: Hindi (non-ASCII) folder or username.** MinGW gcc/ld cannot open such
+  paths ("cannot open output file …\\?????\\a.exe"). Builds now run in an ASCII work
+  folder (source and neighbouring headers copied when needed), PRABHA's runtime and
+  toolchain are kept in an ASCII folder too, and errors still point at your file.
+- **Hinglish error tips were missing on most Linux PCs.** GCC prints curly quotes
+  (`‘;’`) in a UTF-8 locale; tips matched only straight quotes.
+- **Windows: `scanf`/`gets` got a stray `\\r` after `getch()`-style programs**, and
+  Turbo programs used different line endings from normal Windows programs. The
+  runtime keeps Windows text mode; `getch()` reads raw keys itself, so Enter never
+  hangs. Enter is sent as `\\r\\n`: `getch()` returns 13 and swallows the `\\n`.
+- **Apple Silicon / ARM: integer divide by zero did not crash** (ARM returns 0
+  silently, hiding the bug). Student builds on ARM now stop there like on a PC.
+- **Debugger: a late command to a gdb that had already exited crashed the extension
+  host** (uncaught EPIPE, found on Windows CI). Now handled.
 - Turbo mode no longer rewrites `void main()` that appears inside strings or
   comments, now also handles implicit-int `main()`, `return;` inside main, and
   `far` / `near` / `huge` pointers, and applies to C files as well as C++.

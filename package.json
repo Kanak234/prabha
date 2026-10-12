@@ -239,10 +239,10 @@
             "bundled",
             "system"
           ],
-          "default": "auto",
+          "default": "bundled",
           "enumDescriptions": [
             "Use a compiler already on this computer; if none, PRABHA installs its own.",
-            "Always use PRABHA's own compiler (Windows: GCC + gdb, Linux/macOS: Zig clang).",
+            "Default. Always use PRABHA's own compiler (Windows: GCC + gdb, Linux/macOS: Zig clang) — installed automatically the first time; if that is not possible (offline) PRABHA falls back to a compiler on this computer.",
             "Only use compilers already installed on this computer."
           ],
           "markdownDescription": "Which compiler PRABHA uses. **auto** (default) = your gcc/clang if installed, else PRABHA's own. Run **PRABHA: Install / Choose Compiler** to download PRABHA's compiler (one time, checksum-verified)."
