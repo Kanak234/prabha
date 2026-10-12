@@ -230,8 +230,25 @@ async function scenario(backend) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+async function gdbGoneRegression() {
+  console.log('\n[debug] gdb exits under the adapter');
+  const s = new GdbDebugSession();
+  s.emit = () => {};
+  s.start('gdb');
+  await new Promise(r => setTimeout(r, 300));
+  s.gdb.kill('SIGKILL');
+  await new Promise(r => s.gdb.on('exit', r));
+  let rejected = false;
+  try { await s.mi('-exec-next'); } catch { rejected = true; }
+  try { await s.mi('-stack-list-frames'); } catch { rejected = rejected && true; }
+  s.kill();
+  await new Promise(r => setTimeout(r, 200));
+  ok('commands after gdb died are rejected, no uncaught EPIPE', rejected);
+}
+
 (async () => {
   const want = process.argv[2];
+  if ((!want || want === 'gdb') && has('gdb')) await gdbGoneRegression();
   if ((!want || want === 'gdb') && has('gdb')) { console.log('\n[debug] PRABHA gdb adapter'); await scenario('gdb'); }
   else if (!want || want === 'gdb') console.log('  - gdb not installed: skipped');
   if ((!want || want === 'lldb') && findLldbDap()) { console.log('\n[debug] lldb-dap (macOS path)'); await scenario('lldb'); }
