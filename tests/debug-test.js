@@ -227,7 +227,8 @@ async function scenario(backend) {
     } catch (e) { ok(backend + ': crash session', false, e.stack); }
     c3.t.close();
   }
-  fs.rmSync(dir, { recursive: true, force: true });
+  // Windows: gdb/program ke band hone tak folder locked rehta hai — retry, aur fail ho to chhod do
+  try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 }); } catch { /* temp folder, OS saaf karega */ }
 }
 
 async function gdbGoneRegression() {
