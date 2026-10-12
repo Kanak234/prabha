@@ -50,7 +50,15 @@ jobs:
       - name: PRABHA test suite (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: bash tests/run-all.sh
+        # Fail hone par aakhri 60 lines ek ::error annotation mein — taaki log bina
+        # GitHub login ke Checks API se padha ja sake.
+        run: |
+          set -o pipefail
+          if ! bash tests/run-all.sh 2>&1 | tee run-all.log; then
+            tail -60 run-all.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' > tail.txt
+            echo "::error title=run-all.sh failed::$(cat tail.txt)"
+            exit 1
+          fi
 
       - name: Windows runtime test (stdout protocol, getch, examples)
         if: runner.os == 'Windows'
