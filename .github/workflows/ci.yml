@@ -64,39 +64,39 @@ jobs:
 
       - name: Windows runtime test (stdout protocol, getch, examples, console, crash codes)
         if: runner.os == 'Windows'
-        run: node tests/windows-sim.js
+        run: node tests/ci.js windows-sim node tests/windows-sim.js
 
       - name: Install gdb (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gdb clang
 
       - name: IDE core (errors + Hinglish tips, console, crash text)
-        run: node tests/ide-test.js
+        run: node tests/ci.js ide-test node tests/ide-test.js
 
       - name: Build pipeline (Turbo mode, panel, debug build, strict)
-        run: node tests/build-test.js
+        run: node tests/ci.js build-test node tests/build-test.js
 
       - name: Turbo → Modern converter (same output check)
-        run: node tests/modern-test.js
+        run: node tests/ci.js modern-test node tests/modern-test.js
 
       - name: Turbo → Modern + build with clang (Linux)
         if: runner.os == 'Linux'
         env:
           PRABHA_TEST_CC: clang
           PRABHA_TEST_CXX: clang++
-        run: node tests/ide-test.js && node tests/build-test.js && node tests/modern-test.js
+        run: node tests/ci.js ide-clang node tests/ide-test.js && node tests/ci.js build-clang node tests/build-test.js && node tests/ci.js modern-clang node tests/modern-test.js
 
       - name: Debugger (gdb on Linux/Windows, lldb-dap on macOS)
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then node tests/debug-test.js lldb; else node tests/debug-test.js gdb; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then node tests/ci.js debug-lldb node tests/debug-test.js lldb; else node tests/ci.js debug-gdb node tests/debug-test.js gdb; fi
 
       - name: PRABHA's own compiler — real Zig download + verify + build (Linux/macOS)
         if: runner.os != 'Windows'
-        run: node tests/zig-install-test.js
+        run: node tests/ci.js zig-install node tests/zig-install-test.js
 
       - name: Router + toolchain + extension wiring
-        run: node tests/extension-test.js
+        run: node tests/ci.js extension-test node tests/extension-test.js
 
       - name: Validate JavaScript syntax
         shell: bash
