@@ -99,7 +99,15 @@ function install(opts = {}) {
       panels.push(p);
       return p;
     },
-    createTerminal: (o) => { const t = { name: (o && o.name) || o, options: o, sent: [], show() {}, sendText(s) { this.sent.push(s); }, dispose() {} }; terminals.push(t); return t; },
+    // pty terminal (PRABHA Console): show() par open(), likha hua `t.output` mein, t.type() = user keystrokes
+    createTerminal: (o) => {
+      const t = { name: (o && o.name) || o, options: o, sent: [], output: '', closed: null, opened: false,
+        show() { if (o && o.pty && !t.opened) { t.opened = true; o.pty.open(); } }, sendText(s) { this.sent.push(s); },
+        type(d) { o.pty.handleInput(d); },
+        dispose() { if (o && o.pty && !t.disposed) { t.disposed = true; o.pty.close(); fire('closeTerminal', t); } } };
+      if (o && o.pty) { o.pty.onDidWrite(s => { t.output += s; }); if (o.pty.onDidClose) o.pty.onDidClose(c => { t.closed = c === undefined ? 0 : c; }); }
+      terminals.push(t); return t;
+    },
     onDidChangeActiveTextEditor: on('activeEditor'),
     onDidCloseTerminal: on('closeTerminal'),
     registerWebviewViewProvider: () => ({ dispose() {} }),
@@ -168,7 +176,23 @@ function install(opts = {}) {
     },
     env: { clipboard: { _t: '', writeText(t) { this._t = t; return Promise.resolve(); }, readText() { return Promise.resolve(this._t); } }, openExternal: () => Promise.resolve(true), appName: 'mock', language: 'en' },
     extensions: { getExtension: () => undefined },
-    debug: stub('debug'), tasks: stub('tasks'),
+    // debug: provider/factory test ke liye pakad lo; startDebugging config resolve karke record karta hai
+    debug: {
+      providers: {}, factories: {}, started: [], activeDebugSession: undefined,
+      registerDebugConfigurationProvider(type, p) { this.providers[type] = p; return { dispose() {} }; },
+      registerDebugAdapterDescriptorFactory(type, f) { this.factories[type] = f; return { dispose() {} }; },
+      onDidTerminateDebugSession: on('debugEnd'), onDidStartDebugSession: on('debugStart'),
+      async startDebugging(folder, config) {
+        const p = this.providers[config.type];
+        let c = p && p.resolveDebugConfiguration ? await p.resolveDebugConfiguration(folder, config) : config;
+        if (c && p && p.resolveDebugConfigurationWithSubstitutedVariables) c = await p.resolveDebugConfigurationWithSubstitutedVariables(folder, c);
+        this.started.push(c); return !!c;
+      },
+      stopDebugging() { return Promise.resolve(); }
+    },
+    DebugAdapterInlineImplementation: class { constructor(impl) { this.implementation = impl; } },
+    DebugAdapterExecutable: class { constructor(command, args) { this.command = command; this.args = args; } },
+    tasks: stub('tasks'),
     _commands: commands, _messages: messages, _panels: panels, _terminals: terminals, _docs: docs, _fire: fire, _config: config
   };
 

@@ -57,7 +57,7 @@ static void pr_sleep_ms(unsigned ms) { struct timespec t = { ms / 1000u, (long)(
 #define PR_W 640
 #define PR_H 480
 #define PR_PAGES 4
-#define PR_VERSION "5.0.1"
+#define PR_VERSION "6.0.0"
 
 /* ── state ───────────────────────────────────────────────────── */
 
@@ -147,6 +147,9 @@ static int proto_fd(void) {
     pr_platform_init();
     if (g_proto_fd != -1) return g_proto_fd;
     const char *env = getenv("PRABHA_PROTO_FD");
+    /* "off" = protocol band (PRABHA 6.0 debugger: gdb ke andar frames ka koi
+     * reader nahi, to stdout ganda na ho — program ka apna printf saaf dikhe) */
+    if (env && strcmp(env, "off") == 0) { g_proto_fd = -2; return g_proto_fd; }
     if (env && *env) { g_proto_fd = atoi(env); return g_proto_fd; }
     /*
      * fd 3 sirf tab, jab extension PRABHA_PROTO_FD=3 bataye. Pehle "fd 3 khula
@@ -161,6 +164,7 @@ static int proto_fd(void) {
 static void proto_raw(const char *s, size_t n) {
     int fd = proto_fd();
     size_t off = 0;
+    if (fd < 0) return;                     /* PRABHA_PROTO_FD=off */
     while (off < n) {
         long w = (long)pr_write(fd, s + off, (unsigned)(n - off));
         if (w <= 0) break;

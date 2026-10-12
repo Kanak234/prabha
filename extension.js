@@ -1,19 +1,30 @@
 /*
- * PRABHA 5.0.0 — Turbo C graphics.h / conio.h inside VS Code.
+ * PRABHA 6.0.0 — Turbo C/C++ ka "extension IDE" VS Code ke andar.
  *
- * 5.0.0: in-built compiler. PRABHA ab khud compiler dhoondhta hai (PATH,
- * CodeBlocks/MSYS2/TDM/WinGet folders) aur na mile to Windows par EK click mein
- * apna GCC le aata hai (lib/toolchain.js). macOS/Linux par sahi install command
- * terminal mein khol deta hai. Windows ka stdout protocol bhi ab line-level par
- * route hota hai (lib/stream.js) — frames tootte nahi, printf ka text gum nahi hota.
+ * WHY:   Dev-C++ aur Turbo C++ ko update milna band ho gaya. College mein abhi bhi
+ *        wahi code likha jaata hai. PRABHA wo poora IDE VS Code mein deta hai —
+ *        compiler, console, errors, debugger, aur purane code ko modern banana —
+ *        sab apna, kisi doosre extension par depend nahi.
  *
- * The runtime (runtime/prabha_core.c) implements the whole BGI + conio
- * surface against a 640x480 16-colour framebuffer and streams RLE frames
- * over an extra pipe (fd 3), so the program's own printf/scanf still own
- * stdout/stdin. This file compiles the user's program against that runtime,
- * runs it, feeds frames to the panel, and feeds the panel's keystrokes back
- * to the program's stdin for getch/kbhit/cscanf.
+ * WHAT (6.0 = 5.1 + 5.2 + 6.0 ek saath):
+ *   • Apna compiler: Windows → PRABHA GCC (WinLibs, gdb ke saath),
+ *     Linux/macOS → PRABHA Zig (clang + libc + libc++). Ek click, SHA-256 check.
+ *   • Dev-C++ jaisa Run: Ctrl+F9 = compile + run, Alt+F9 = sirf compile.
+ *     Console programs "PRABHA Console" mein (input, "Press any key", exit time,
+ *     crash ki Hinglish wajah). graphics.h / conio.h programs 640×480 panel mein.
+ *   • Errors Problems tab mein — click karo to sahi line; har error ke saath
+ *     Hinglish tip ("; bhool gaye", "iostream.h purana hai"…).
+ *   • Debugger (F5): breakpoints, F7 step into, F8 step over, variables, watch,
+ *     call stack. Linux/Windows → gdb (PRABHA ka apna adapter), macOS → lldb-dap.
+ *   • Turbo → Modern: purana code side-by-side naya, har badlaav ka "kyun", quiz,
+ *     aur "dono ka output same hai?" check.
+ *
+ * FLOW:  command → ensureToolchain() → lib/build.js build() → diagnostics →
+ *        runConsole() (lib/console-core.js) | runPanel() (runtime protocol) |
+ *        debug (lib/debug/gdb-adapter.js / lldb-dap)
  */
+'use strict';
+
 const vscode = require('vscode');
 const cp = require('child_process');
 const fs = require('fs');
@@ -21,16 +32,24 @@ const os = require('os');
 const path = require('path');
 const toolchain = require('./lib/toolchain');
 const { createRouter } = require('./lib/stream');
+const { build, cleanup, usesPanel } = require('./lib/build');
+const { ConsoleSession } = require('./lib/console-core');
+const { explainExit, exitLine } = require('./lib/crash');
+const { GdbDebugSession } = require('./lib/debug/gdb-adapter');
+const engine = require('./lib/modern/engine');
+const { explain } = require('./lib/modern/explain');
 
-const VERSION = '5.0.1';
-let panel;            // the one PRABHA screen
-let child;            // running program
-let out;              // output channel
-let status;
-let extRoot;
-const coreObjs = new Map(); // compiler path → compiled prabha_core.o (session cache)
-let storageDir;       // PRABHA ka apna GCC yahan rehta hai (globalStorage)
-let cachedTc;         // last detected toolchain
+const VERSION = '6.0.0';
+const SRC_EXT = ['.c', '.cpp', '.cc', '.cxx'];
+
+let extRoot, storageDir;
+let out, status, diag;
+let cachedTc;                 // last detected toolchain
+let panel, child;             // graphics panel + uska program
+let con = null;               // { term, session, result } — PRABHA Console
+const modern = { panel: null, uri: null, lang: 'hi', review: [] };
+
+/* ───────────────────────────── activate ───────────────────────────── */
 
 function activate(context) {
   extRoot = context.extensionPath;
@@ -38,14 +57,28 @@ function activate(context) {
   out = vscode.window.createOutputChannel('PRABHA');
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
   status.command = 'prabha.showOutput';
-  context.subscriptions.push(out, status,
-    vscode.commands.registerCommand('prabha.run', target => runCurrent(target)),
-    vscode.commands.registerCommand('prabha.stop', () => stopProgram('stopped from the command')),
-    vscode.commands.registerCommand('prabha.showOutput', () => out.show(true)),
-    vscode.commands.registerCommand('prabha.openExample', () => openExample(context)),
-    vscode.commands.registerCommand('prabha.installCompiler', () => installCompiler(true)),
-    vscode.commands.registerCommand('prabha.compilerInfo', () => compilerInfo()),
-    vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('prabha')) cachedTc = undefined; })
+  diag = vscode.languages.createDiagnosticCollection('prabha');
+
+  const cmd = (id, fn) => vscode.commands.registerCommand(id, fn);
+  context.subscriptions.push(out, status, diag,
+    cmd('prabha.run', target => runCurrent(target)),
+    cmd('prabha.compile', target => compileOnly(target)),
+    cmd('prabha.stop', () => stopProgram('stopped from the command')),
+    cmd('prabha.debug', target => startDebug(target)),
+    cmd('prabha.modernize', target => openModern(context, target)),
+    cmd('prabha.showOutput', () => out.show(true)),
+    cmd('prabha.openExample', () => openExample(context)),
+    cmd('prabha.installCompiler', () => installCompiler(true)),
+    cmd('prabha.compilerInfo', () => compilerInfo()),
+    vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('prabha')) cachedTc = undefined; }),
+    vscode.workspace.onDidCloseTextDocument(d => diag.delete(d.uri)),
+    vscode.window.onDidCloseTerminal(t => { if (con && con.term === t) { con.session.kill(); cleanup(con.result); con = null; } }),
+    vscode.workspace.onDidChangeTextDocument(e => { if (modern.panel && modern.uri && e.document.uri.toString() === modern.uri.toString()) renderModernSoon(); }),
+    // Debugger
+    vscode.debug.registerDebugConfigurationProvider('prabha', debugConfigProvider),
+    vscode.debug.registerDebugAdapterDescriptorFactory('prabha', debugAdapterFactory),
+    // debug khatam → temp build folder saaf
+    vscode.debug.onDidTerminateDebugSession(s => { if (s.type === 'prabha' && s.configuration.prabhaWork) cleanup({ work: s.configuration.prabhaWork }); })
   );
 }
 
@@ -54,248 +87,333 @@ function cfg() {
   return {
     cc: c.get('cCompiler', 'gcc'),
     cxx: c.get('cppCompiler', 'g++'),
+    toolchain: c.get('toolchain', 'auto'),
     toolchainUrl: c.get('toolchainUrl', ''),
     flags: c.get('extraFlags', ''),
     scale: c.get('scale', 1.5),
     keepOpen: c.get('keepPanelOpenOnExit', true),
-    legacyCompat: c.get('turboCppCompatibility', true)
+    legacyCompat: c.get('turboCppCompatibility', true),
+    runIn: c.get('runIn', 'auto'),
+    timeout: c.get('runTimeoutSeconds', 0),
+    debugConsole: c.get('debugConsole', 'integratedTerminal')
   };
 }
 
-/* ───────────── compiler (in-built toolchain) ───────────── */
+/* ───────────────────────── compiler (in-built) ───────────────────────── */
 
-/**
- * Kaam karne wala compiler lao. Na mile to user se ek click mein install karwao.
- * Return: toolchain object ya null (user ne mana kiya / install fail).
- */
-async function ensureToolchain(isCpp) {
+function detectTc() {
   const conf = cfg();
-  if (!cachedTc) cachedTc = toolchain.detect({ cc: conf.cc, cxx: conf.cxx }, storageDir);
+  const base = { cc: conf.cc, cxx: conf.cxx };
+  // user ki pasand pehle; na mile to 'auto' (taaki install ke baad PRABHA wala bhi mil jaaye)
+  return toolchain.detect({ ...base, toolchain: conf.toolchain }, storageDir) ||
+    (conf.toolchain !== 'auto' ? toolchain.detect({ ...base, toolchain: 'auto' }, storageDir) : null);
+}
+
+/** Kaam karne wala compiler lao; na mile to ek click mein install karwao */
+async function ensureToolchain(isCpp) {
+  if (!cachedTc) cachedTc = detectTc();
   if (cachedTc && (!isCpp || cachedTc.cxx)) return cachedTc;
   const ok = await installCompiler(false, isCpp);
   return ok ? cachedTc : null;
 }
 
-/** Compiler install flow — Windows: PRABHA GCC; macOS: Xcode tools; Linux: package manager */
+/**
+ * PRABHA compiler install — har OS par EK button:
+ *   Windows → PRABHA GCC (WinLibs, gdb ke saath)   Linux/macOS → PRABHA Zig (clang)
+ * Doosre raaste: apna compiler folder chuno, ya system package (terminal command).
+ */
 async function installCompiler(explicit, isCpp) {
-  const need = isCpp ? 'C++ compiler (g++)' : 'C compiler (gcc)';
-  if (process.platform === 'win32') {
-    const pick = await vscode.window.showInformationMessage(
-      'PRABHA ko ' + need + ' chahiye. PRABHA apna GCC ek click mein install kar sakta hai (' + toolchain.WINLIBS.version +
-      ', ~' + toolchain.WINLIBS.approxMB + ' MB, sirf ek baar, sirf PRABHA ke folder mein — system PATH nahi chhedta).',
-      { modal: !explicit }, 'Install PRABHA GCC', 'Mera MinGW folder chuno');
-    if (pick === 'Mera MinGW folder chuno') return chooseCompilerFolder();
-    if (pick !== 'Install PRABHA GCC') return false;
-    try {
-      await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PRABHA: GCC install ho raha hai', cancellable: true }, async (progress, token) => {
-        let last = 0;
-        await toolchain.installWindows(storageDir, {
-          url: cfg().toolchainUrl || undefined,
-          isCancelled: () => token.isCancellationRequested,
-          log: s => out.appendLine('[toolchain] ' + s),
-          onProgress: (got, total) => {
-            const pct = total ? Math.floor(got * 100 / total) : 0;
-            if (pct > last) { progress.report({ increment: pct - last, message: Math.round(got / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB' }); last = pct; }
-          }
-        });
-        progress.report({ message: 'extract ho gaya, check kar raha hoon…' });
-      });
-    } catch (e) {
-      out.appendLine('[toolchain] install failed: ' + (e.message || e));
-      out.show(true);
-      vscode.window.showErrorMessage('PRABHA: GCC install nahi ho paya — ' + (e.message || e) + '. Internet check karo, ya "Mera MinGW folder chuno" try karo.');
-      return false;
-    }
-    cachedTc = toolchain.detect({ cc: cfg().cc, cxx: cfg().cxx }, storageDir);
-    if (cachedTc) vscode.window.showInformationMessage('PRABHA: compiler ready — ' + cachedTc.version);
-    return !!cachedTc;
-  }
-  const hint = toolchain.installHint();
+  const need = isCpp ? 'C++ compiler' : 'C compiler';
+  const info = toolchain.bundledInfo();
+  const B_INSTALL = 'Install PRABHA compiler', B_FOLDER = 'Mera compiler folder chuno', B_SYSTEM = 'System package (terminal)';
+  const buttons = [B_INSTALL, B_FOLDER];
+  const hint = process.platform === 'win32' ? null : toolchain.installHint();
+  if (hint) buttons.push(B_SYSTEM);
   const pick = await vscode.window.showInformationMessage(
-    'PRABHA ko ' + need + ' chahiye. Ek command se install ho jaayega: ' + hint.command + (hint.note ? ' — ' + hint.note : ''),
-    hint.label + ' (terminal mein)', 'Compiler folder chuno');
-  if (pick === 'Compiler folder chuno') return chooseCompilerFolder();
-  if (!pick) return false;
-  const t = vscode.window.createTerminal({ name: 'PRABHA · compiler install' });
-  t.show();
-  t.sendText(hint.command);
-  vscode.window.showInformationMessage('Install khatam hone ke baad PRABHA: Run dobara dabao.');
-  return false;
+    (explicit ? 'PRABHA compiler: ' : 'PRABHA ko ' + need + ' chahiye. ') +
+    'PRABHA apna compiler ek click mein la sakta hai — ' + info.name + ', ~' + info.mb +
+    ' MB, sirf ek baar, sirf PRABHA ke folder mein (system PATH nahi chhedta).',
+    { modal: !explicit }, ...buttons);
+  if (pick === B_FOLDER) return chooseCompilerFolder();
+  if (pick === B_SYSTEM) {
+    const t = vscode.window.createTerminal({ name: 'PRABHA · compiler install' });
+    t.show(); t.sendText(hint.command);
+    vscode.window.showInformationMessage('Install khatam hone ke baad Ctrl+F9 dobara dabao.');
+    return false;
+  }
+  if (pick !== B_INSTALL) return false;
+  try {
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PRABHA: ' + info.name + ' install ho raha hai', cancellable: true }, async (progress, token) => {
+      let last = 0;
+      await toolchain.installBundled(storageDir, {
+        url: cfg().toolchainUrl || undefined,
+        isCancelled: () => token.isCancellationRequested,
+        log: s => out.appendLine('[toolchain] ' + s),
+        onProgress: (got, total) => {
+          const pct = total ? Math.floor(got * 100 / total) : 0;
+          if (pct > last) { progress.report({ increment: pct - last, message: Math.round(got / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB' }); last = pct; }
+        }
+      });
+      progress.report({ message: 'extract ho gaya, check kar raha hoon…' });
+    });
+  } catch (e) {
+    out.appendLine('[toolchain] install failed: ' + (e.message || e));
+    out.show(true);
+    vscode.window.showErrorMessage('PRABHA: compiler install nahi ho paya — ' + (e.message || e) + '. Internet check karo, ya "' + B_FOLDER + '" try karo.');
+    return false;
+  }
+  cachedTc = detectTc();
+  if (cachedTc) vscode.window.showInformationMessage('PRABHA: compiler ready — ' + cachedTc.version);
+  return !!cachedTc;
 }
 
 /** User apna compiler folder (…\\bin) chune → settings mein save */
 async function chooseCompilerFolder() {
-  const pick = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Is folder mein gcc hai' });
+  const pick = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Is folder mein gcc/clang hai' });
   if (!pick || !pick[0]) return false;
   const bin = pick[0].fsPath;
   const ext = process.platform === 'win32' ? '.exe' : '';
-  const cc = path.join(bin, 'gcc' + ext), cxx = path.join(bin, 'g++' + ext);
-  if (!toolchain.works(cc, toolchain.envWith(bin))) {
-    vscode.window.showErrorMessage('PRABHA: is folder mein chalne wala gcc' + ext + ' nahi mila (' + bin + ').');
+  const pairs = [['gcc', 'g++'], ['clang', 'clang++']].map(([c, x]) => [path.join(bin, c + ext), path.join(bin, x + ext)]);
+  const found = pairs.find(([c]) => toolchain.works(c, toolchain.envWith(bin)));
+  if (!found) {
+    vscode.window.showErrorMessage('PRABHA: is folder mein chalne wala gcc' + ext + '/clang' + ext + ' nahi mila (' + bin + ').');
     return false;
   }
   const c = vscode.workspace.getConfiguration('prabha');
-  await c.update('cCompiler', cc, vscode.ConfigurationTarget.Global);
-  await c.update('cppCompiler', cxx, vscode.ConfigurationTarget.Global);
-  cachedTc = toolchain.detect({ cc, cxx }, storageDir);
+  await c.update('cCompiler', found[0], vscode.ConfigurationTarget.Global);
+  await c.update('cppCompiler', found[1], vscode.ConfigurationTarget.Global);
+  cachedTc = toolchain.detect({ cc: found[0], cxx: found[1], toolchain: 'system' }, storageDir);
   return !!cachedTc;
 }
 
 function compilerInfo() {
-  cachedTc = toolchain.detect({ cc: cfg().cc, cxx: cfg().cxx }, storageDir);
+  cachedTc = detectTc();
   if (!cachedTc) { installCompiler(true); return; }
-  out.appendLine('PRABHA compiler: ' + cachedTc.version + '\n  C:   ' + cachedTc.cc + '\n  C++: ' + (cachedTc.cxx || '(not found)') + '\n  from: ' + cachedTc.source);
+  const gdb = toolchain.findGdb(cachedTc), lldb = toolchain.findLldbDap();
+  out.appendLine('PRABHA ' + VERSION + ' compiler: ' + cachedTc.version +
+    '\n  C:        ' + cachedTc.cc + ' ' + (cachedTc.ccArgs || []).join(' ') +
+    '\n  C++:      ' + (cachedTc.cxx ? cachedTc.cxx + ' ' + (cachedTc.cxxArgs || []).join(' ') : '(not found)') +
+    '\n  from:     ' + cachedTc.source +
+    '\n  debugger: ' + (gdb || lldb || '(none — F5 dabao, PRABHA install command batayega)'));
   out.show(true);
-  vscode.window.showInformationMessage('PRABHA compiler: ' + cachedTc.version + ' (' + cachedTc.source + ')');
+  vscode.window.showInformationMessage('PRABHA compiler: ' + cachedTc.version + ' (' + cachedTc.source + ')', 'Install PRABHA compiler')
+    .then(p => { if (p) installCompiler(true); });
 }
 
-async function runCurrent(target) {
+/* ───────────────────────── compile (Alt+F9) ───────────────────────── */
+
+/** Active / diya hua C/C++ file — saved; warna null */
+async function sourceFile(target) {
   const editor = vscode.window.activeTextEditor;
-  const uri = target || (editor ? editor.document.uri : undefined);
+  const uri = target && target.fsPath ? target : (editor ? editor.document.uri : undefined);
   if (!uri || uri.scheme !== 'file') {
-    vscode.window.showInformationMessage('Open a .c or .cpp file that uses graphics.h or conio.h, then run PRABHA.');
-    return;
+    // untitled file: pehle save karwao (compiler ko disk par file chahiye)
+    if (editor && editor.document.isUntitled) {
+      const saved = await editor.document.save();
+      if (saved) return sourceFile(vscode.window.activeTextEditor.document.uri);
+    }
+    vscode.window.showInformationMessage('PRABHA: ek .c ya .cpp file kholo, phir Ctrl+F9 dabao.');
+    return null;
   }
   const file = uri.fsPath;
   const ext = path.extname(file).toLowerCase();
-  if (!['.c', '.cpp', '.cc', '.cxx'].includes(ext)) {
-    vscode.window.showWarningMessage('PRABHA runs C and C++ files (.c/.cpp) — this is ' + (ext || 'not one') + '.');
-    return;
+  if (!SRC_EXT.includes(ext)) {
+    vscode.window.showWarningMessage('PRABHA C aur C++ files (.c/.cpp) chalata hai — ye ' + (ext || 'koi aur') + ' hai.');
+    return null;
   }
   const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
   if (doc && doc.isDirty) await doc.save();
+  return file;
+}
 
-  stopProgram();
+/**
+ * File compile karo, errors Problems tab mein daalo.
+ * @returns build result (ok) ya null
+ */
+async function compileFile(file, mode, extra = {}) {
   const conf = cfg();
-  const isCpp = ext !== '.c';
+  const isCpp = path.extname(file).toLowerCase() !== '.c';
   const tc = await ensureToolchain(isCpp);
-  if (!tc) return;
-  const cc = tc.cc;
-  const cxx = tc.cxx;
-  const driver = isCpp ? cxx : cc;
-  const isClang = /clang/i.test(tc.version);
-
+  if (!tc) return null;
   out.clear();
   out.appendLine('· PRABHA ' + VERSION + ' · ' + file);
-  out.appendLine('compiler: ' + tc.version + ' (' + tc.source + ')');
+  out.appendLine('compiler: ' + tc.version + ' (' + tc.source + ')' + (mode === 'debug' ? ' · debug build (-g -O0)' : ''));
   status.text = '$(sync~spin) PRABHA compiling';
   status.show();
-
-  const runtime = path.join(extRoot, 'runtime');
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha-'));
-  const bin = path.join(work, 'program' + (process.platform === 'win32' ? '.exe' : ''));
-
+  let r;
   try {
-    // 1) the runtime object is compiled once per session per compiler, always as C
-    let coreObj = coreObjs.get(cc);
-    if (!coreObj || !fs.existsSync(coreObj)) {
-      coreObj = path.join(os.tmpdir(), 'prabha_core_' + process.pid + '_' + coreObjs.size + '.o');
-      await exec(cc, ['-std=c99', '-O2', '-I', runtime, '-c',
-        path.join(runtime, 'prabha_core.c'), '-o', coreObj], tc.env);
-      coreObjs.set(cc, coreObj);
-      out.appendLine('runtime compiled with ' + cc);
-    }
-
-    // 2) the user's program, with its natural compiler.
-    //
-    // Turbo C++ compatibility (on by default): old college programs use
-    // <iostream.h>, unqualified cout/cin, and `void main()`, none of which a
-    // modern g++ accepts as-is. When enabled, PRABHA compiles such a program
-    // WITHOUT asking the student to change a single line:
-    //   - the compat/ folder supplies <iostream.h>, <conio.h>, <iomanip.h>...
-    //   - the prelude header pulls in `using namespace std` and the common
-    //     standard headers, so unqualified names resolve
-    //   - `void main(...)` is rewritten to `int main(...)` in a temporary copy
-    //     (the compiler rejects a void-returning main outright)
-    // A program that is already valid modern C++ is unaffected by any of this.
-    const legacy = isCpp && conf.legacyCompat;
-    const compatDir = path.join(runtime, 'compat');
-    const std = isCpp ? (legacy ? '-std=c++14' : '-std=c++17') : '-std=c99';
-    const extra = conf.flags ? conf.flags.split(/\s+/).filter(Boolean) : [];
-
-    let srcToCompile = file;
-    if (legacy) {
-      const raw = fs.readFileSync(file, 'utf8');
-      // Rewrite only the `void main` entry form; `int main` is left untouched.
-      const fixed = raw.replace(/\bvoid(\s+)main(\s*)\(/g, 'int$1main$2(');
-      // Compile a temp copy so the student's file on disk is never modified.
-      srcToCompile = path.join(work, path.basename(file));
-      fs.writeFileSync(srcToCompile, fixed, 'utf8');
-      if (fixed !== raw) out.appendLine('Turbo C++ mode: void main() adapted to int main()');
-    }
-
-    const args = [std];
-    if (legacy) {
-      if (!isClang) args.push('-fpermissive');   // clang ka equivalent nahi; uske bina bhi chalta hai
-      args.push(
-        '-I', compatDir,
-        '-include', path.join(compatDir, 'prabha_cpp_prelude.h'));
-    }
-    args.push('-I', runtime, srcToCompile, coreObj, '-o', bin, '-lm', ...extra);
-    // Windows + MinGW: static link, taaki program ko libstdc++-6.dll / libgcc DLL
-    // dhoondhne na pade ("The code execution cannot proceed..." error).
-    if (tc.mingw) args.push('-static');
-
-    await exec(driver, args, tc.env);
-    out.appendLine('program compiled with ' + driver +
-      (legacy ? ' (Turbo C++ compatibility on)' : '') + '\n');
+    r = await build(file, {
+      tc, runtimeDir: path.join(extRoot, 'runtime'), mode,
+      legacyCompat: conf.legacyCompat, extraFlags: conf.flags,
+      log: s => out.appendLine(s), ...extra
+    });
   } catch (e) {
     status.text = '$(error) PRABHA compile failed';
-    out.appendLine(String(e.message || e));
-    out.show(true);
-    return;
+    out.appendLine(String(e.message || e)); out.show(true);
+    return null;
   }
+  const n = showDiagnostics(file, r.diagnostics, extra.diagUri);
+  if (r.log.trim()) out.appendLine('\n' + r.log.trim());
+  // Dev-C++ jaisa "Compilation results"
+  out.appendLine('\n── Compilation results ──  Errors: ' + n.errors + '   Warnings: ' + n.warnings);
+  if (!r.ok) {
+    status.text = '$(error) PRABHA · ' + n.errors + ' error' + (n.errors === 1 ? '' : 's');
+    const first = r.diagnostics.find(d => d.severity === 'error');
+    const msg = first ? 'Line ' + first.line + ': ' + first.message + (first.tip ? '  💡 ' + first.tip : '') : 'Compile nahi hua — PRABHA output dekho.';
+    vscode.window.showErrorMessage('PRABHA: ' + msg, 'Show Problems', 'Show Output').then(p => {
+      if (p === 'Show Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
+      if (p === 'Show Output') out.show(true);
+    });
+    if (first && first.file === file) revealLine(file, first.line, first.col);
+    cleanup(r);
+    return null;
+  }
+  r.tc = tc;
+  return r;
+}
 
+/** Compiler messages → VS Code Problems (squiggly + Hinglish tip) */
+function showDiagnostics(file, list, diagUri) {
+  diag.delete(diagUri || vscode.Uri.file(file));
+  const byFile = new Map();
+  let errors = 0, warnings = 0;
+  for (const d of list) {
+    if (d.severity === 'error') errors++; else if (d.severity === 'warning') warnings++;
+    if (!d.file) continue;
+    const key = d.file === file && diagUri ? diagUri.toString() : vscode.Uri.file(d.file).toString();
+    if (!byFile.has(key)) byFile.set(key, { uri: d.file === file && diagUri ? diagUri : vscode.Uri.file(d.file), items: [] });
+    const line = Math.max(0, d.line - 1), col = Math.max(0, d.col - 1);
+    const dg = new vscode.Diagnostic(new vscode.Range(line, col, line, col + wordLen(d.file, line, col)),
+      d.message + (d.tip ? '\n💡 ' + d.tip : '') + (d.notes && d.notes.length ? '\n   ' + d.notes.slice(0, 2).join('\n   ') : ''),
+      d.severity === 'error' ? vscode.DiagnosticSeverity.Error : d.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
+    dg.source = 'PRABHA';
+    byFile.get(key).items.push(dg);
+    out.appendLine((d.severity === 'error' ? '✖ ' : '⚠ ') + path.basename(d.file) + ':' + d.line + ':' + d.col + '  ' + d.message + (d.tip ? '\n    💡 ' + d.tip : ''));
+  }
+  for (const { uri, items } of byFile.values()) diag.set(uri, items);
+  return { errors, warnings };
+}
+
+/** Error wale shabd ki lambai (squiggle poore word par) */
+function wordLen(file, line, col) {
+  const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === file);
+  if (!doc || line >= doc.lineCount) return 1;
+  const m = /^[\w$]+/.exec(doc.lineAt(line).text.slice(col));
+  return m ? m[0].length : 1;
+}
+
+async function revealLine(file, line, col) {
+  const ed = vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath === file);
+  if (!ed) return;
+  const pos = new vscode.Position(Math.max(0, line - 1), Math.max(0, (col || 1) - 1));
+  ed.selection = new vscode.Selection(pos, pos);
+  ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+}
+
+async function compileOnly(target) {
+  const file = await sourceFile(target);
+  if (!file) return;
+  const r = await compileFile(file, 'compile');
+  if (!r) return;
+  const w = r.diagnostics.filter(d => d.severity === 'warning').length;
+  status.text = '$(check) PRABHA · compiled' + (w ? ' (' + w + ' warning' + (w > 1 ? 's' : '') + ')' : '');
+  vscode.window.setStatusBarMessage('PRABHA: compile ho gaya ✓  Errors: 0  Warnings: ' + w + '  — chalane ke liye Ctrl+F9', 5000);
+  cleanup(r);
+}
+
+/* ───────────────────────── run (Ctrl+F9) ───────────────────────── */
+
+async function runCurrent(target) {
+  const file = await sourceFile(target);
+  if (!file) return;
+  stopProgram();
+  const r = await compileFile(file, 'run');
+  if (!r) return;
+  const conf = cfg();
+  const panelMode = conf.runIn === 'panel' || (conf.runIn === 'auto' && r.usesPanel);
+  if (panelMode) runPanel(r, file); else runConsole(r, file);
+}
+
+/** PRABHA Console — Dev-C++ ka kaala window, VS Code terminal ke roop mein */
+function runConsole(r, file, title) {
+  if (con) { try { con.term.dispose(); } catch { /* */ } }
+  const writeEmitter = new vscode.EventEmitter();
+  const closeEmitter = new vscode.EventEmitter();
+  const conf = cfg();
+  const session = new ConsoleSession({
+    write: s => writeEmitter.fire(s),
+    close: code => closeEmitter.fire(typeof code === 'number' ? code : 0),
+    env: r.tc.env, cwd: path.dirname(file), timeoutSec: conf.timeout,
+    onDone: (res, secs) => {
+      const okRun = res.code === 0 && !res.signal;
+      status.text = (okRun ? '$(check)' : '$(error)') + ' PRABHA · exit ' + (res.code === null ? res.signal : res.code);
+      out.appendLine('\n' + exitLine(res, secs));
+      const why = explainExit({ code: res.code, signal: res.signal, platform: process.platform });
+      if (why) out.appendLine('✖ ' + why.title + '\n  ' + why.why + '\n  Fix: ' + why.fix);
+    }
+  });
+  const pty = {
+    onDidWrite: writeEmitter.event,
+    onDidClose: closeEmitter.event,
+    open: () => {
+      writeEmitter.fire('\x1b[2m PRABHA ' + VERSION + ' · ' + path.basename(file) + ' · ' + r.tc.version + '\x1b[0m\r\n\r\n');
+      session.start(r.bin);
+      status.text = '$(run) PRABHA running';
+    },
+    close: () => { session.kill(); },
+    handleInput: d => session.input(d)
+  };
+  const term = vscode.window.createTerminal({ name: title || 'PRABHA Console', pty, iconPath: new vscode.ThemeIcon('terminal') });
+  con = { term, session, result: r };
+  term.show(false);                      // focus terminal par — user seedha type kare
+}
+
+/** graphics.h / conio.h — 640×480 panel (runtime protocol fd 3 / stdout) */
+function runPanel(r, file) {
+  const conf = cfg();
   ensurePanel(conf.scale);
   panel.webview.postMessage({ t: 'reset' });
-
-  // fd 3 carries the frame protocol; stdout stays the program's own.
-  child = cp.spawn(bin, [], {
+  out.appendLine('');
+  child = cp.spawn(r.bin, [], {
     cwd: path.dirname(file),
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-    // runtime ko saaf batao ki protocol fd 3 par bhejo (Windows par fd 3 nahi
-    // hota, wahan stdout + lib/stream.js router)
-    env: process.platform === 'win32' ? tc.env : { ...tc.env, PRABHA_PROTO_FD: '3' }
+    // Windows par fd 3 nahi hota — wahan stdout + lib/stream.js router
+    env: process.platform === 'win32' ? r.tc.env : { ...r.tc.env, PRABHA_PROTO_FD: '3' }
   });
+  const me = child;
   status.text = '$(run) PRABHA running';
   const started = Date.now();
-
-  // Protocol message → panel. fd 3 (Linux/macOS) aur stdout (Windows) dono
-  // isi router se guzarte hain; line beech mein tooti ho tab bhi sahi jodta hai.
   const toPanel = msg => { if (panel) panel.webview.postMessage({ t: 'proto', msg }); };
-  const fd3 = createRouter(() => { /* fd 3 par sirf protocol aata hai */ }, toPanel);
+  const fd3 = createRouter(() => { /* fd 3 par sirf protocol */ }, toPanel);
   const so = createRouter(text => out.append(text), toPanel);
   if (child.stdio[3]) child.stdio[3].on('data', d => fd3.push(d));
   child.stdout.on('data', d => so.push(d));
   child.stderr.on('data', d => out.append(d.toString()));
-  child.stdin.on('error', () => {});
-  // 'close' (na ki 'exit'): tab tak saara stdout/fd3 data padh liya gaya hota hai
-  child.on('close', code => {
+  child.stdin.on('error', () => { /* program khatam */ });
+  child.on('error', e => out.appendLine('[PRABHA] program start nahi hua: ' + e.message));
+  // 'close' (na ki 'exit'): tab tak saara stdout/fd3 padh liya gaya hota hai
+  child.on('close', (code, signal) => {
     fd3.end(); so.end();
-    const secs = ((Date.now() - started) / 1000).toFixed(1);
-    out.appendLine('\nprogram exited with code ' + code + ' after ' + secs + 's');
-    status.text = (code === 0 ? '$(check)' : '$(error)') + ' PRABHA · exit ' + code;
-    if (panel) panel.webview.postMessage({ t: 'exit', code });
-    child = undefined;
-    try { fs.rmSync(work, { recursive: true, force: true }); } catch { }
-  });
-}
-
-function exec(cmd, args, env) {
-  return new Promise((resolve, reject) => {
-    cp.execFile(cmd, args, { maxBuffer: 8 * 1024 * 1024, env }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || stdout || String(err)).trim()));
-      else resolve();
-    });
+    const secs = (Date.now() - started) / 1000;
+    out.appendLine('\n' + exitLine({ code, signal }, secs));
+    const why = explainExit({ code, signal, platform: process.platform });
+    if (why) { out.appendLine('✖ ' + why.title + '\n  ' + why.why + '\n  Fix: ' + why.fix); out.show(true); }
+    status.text = (code === 0 ? '$(check)' : '$(error)') + ' PRABHA · exit ' + (code === null ? signal : code);
+    if (panel) panel.webview.postMessage({ t: 'exit', code: code === null ? signal : code, why: why ? why.title : '' });
+    if (child === me) child = undefined;
+    cleanup(r);
   });
 }
 
 function stopProgram(reason) {
   if (child) {
-    try { child.kill(); } catch { }
+    try { child.kill(); } catch { /* */ }
     if (reason) out.appendLine('\n' + reason);
     child = undefined;
   }
+  if (con && !con.session.finished) con.session.kill();
+  const ds = vscode.debug.activeDebugSession;
+  if (reason && ds && ds.type === 'prabha') vscode.debug.stopDebugging(ds);
 }
 
 /* keystrokes from the panel → program stdin, Turbo C style */
@@ -313,7 +431,7 @@ function sendKey(k) {
     else if (k.key === 'Tab') child.stdin.write('\t');
     else if (k.key === 'Escape') child.stdin.write(Buffer.from([27]));
     else if (k.key && k.key.length === 1) child.stdin.write(k.key);
-  } catch { }
+  } catch { /* closed */ }
 }
 
 function ensurePanel(scale) {
@@ -338,13 +456,14 @@ function html(scale) {
          display:flex; flex-direction:column; align-items:center; }
   #bar { padding:6px 10px; width:100%; box-sizing:border-box; display:flex; gap:14px; }
   #bar b { color:#e0c060; }
+  #st.bad { color:#ff7b72; }
   canvas { image-rendering:pixelated; width:${w}px; height:${h}px;
            border:1px solid #333; outline:none; margin-top:4px; }
   #hint { font-size:11px; padding:4px; }
 </style></head><body>
 <div id="bar"><b>PRABHA</b><span id="st">waiting for a program…</span><span id="fps"></span></div>
 <canvas id="cv" width="640" height="480" tabindex="0"></canvas>
-<div id="hint">click the screen so it hears your keyboard · getch()/kbhit() read these keys</div>
+<div id="hint">screen par click karo taaki keyboard sune · getch()/kbhit() yahi keys padhte hain · Ctrl+F9 = dobara chalao</div>
 <script>
 const vsc = acquireVsCodeApi();
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
@@ -371,15 +490,15 @@ function b64bytes(s) {
 }
 window.addEventListener('message', e => {
   const m = e.data;
-  if (m.t === 'reset') { fb.fill(0); repaint(); st.textContent = 'running'; return; }
-  if (m.t === 'exit') { st.textContent = 'program exited (code ' + m.code + ')'; stopSound(); return; }
+  if (m.t === 'reset') { fb.fill(0); repaint(); st.textContent = 'running'; st.className = ''; return; }
+  if (m.t === 'exit') { st.textContent = 'program exited (code ' + m.code + ')' + (m.why ? ' — ' + m.why : ''); st.className = m.why ? 'bad' : ''; stopSound(); return; }
   if (m.t !== 'proto') return;
   const p = m.msg;
   if (p.t === 'init') { fb.fill(0); st.textContent = p.w + '×' + p.h + ' · runtime ' + p.version; }
   else if (p.t === 'palette') { pal = p.rgb; repaint(); }
   else if (p.t === 'frame') {
     const raw = b64bytes(p.rle);
-    let o = 0, x = p.x, y = p.y, w = p.w, hh = p.h, row = 0, col = 0;
+    let x = p.x, y = p.y, w = p.w, row = 0, col = 0;
     for (let i = 0; i < raw.length; i += 2) {
       let count = raw[i]; const v = raw[i+1];
       while (count--) {
@@ -393,7 +512,7 @@ window.addEventListener('message', e => {
     if (now - lastSec >= 1000) { fps = frames; frames = 0; lastSec = now;
       fpsEl.textContent = fps + ' fps · frame ' + p.n; }
   }
-  else if (p.t === 'input') { st.textContent = 'waiting for a key — click the screen and type'; cv.focus(); }
+  else if (p.t === 'input') { st.textContent = 'key ka intezaar — screen par click karke type karo'; cv.focus(); }
   else if (p.t === 'sound') { p.hz > 0 ? startSound(p.hz) : stopSound(); }
   else if (p.t === 'end') { st.textContent = 'closegraph()'; stopSound(); }
 });
@@ -414,15 +533,251 @@ repaint();
 </script></body></html>`;
 }
 
+/* ───────────────────────── debugger (F5) ───────────────────────── */
+
+/** F5 / "PRABHA: Debug" — launch.json ke bina bhi chalta hai */
+async function startDebug(target) {
+  const file = await sourceFile(target);
+  if (!file) return;
+  const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file));
+  await vscode.debug.startDebugging(folder, { type: 'prabha', request: 'launch', name: 'PRABHA: Debug ' + path.basename(file), source: file });
+}
+
+const debugConfigProvider = {
+  provideDebugConfigurations() {
+    return [{ type: 'prabha', request: 'launch', name: 'PRABHA: Debug current file', source: '${file}' }];
+  },
+  // launch.json khaali ho aur user F5 dabaye
+  resolveDebugConfiguration(folder, config) {
+    if (!config.type && !config.request) {
+      const ed = vscode.window.activeTextEditor;
+      if (!ed || !['c', 'cpp'].includes(ed.document.languageId)) return config;
+      return { type: 'prabha', request: 'launch', name: 'PRABHA: Debug current file', source: '${file}' };
+    }
+    return config;
+  },
+  // ${file} jaise variables bhar jaane ke baad: compile (-g -O0), debugger chuno
+  async resolveDebugConfigurationWithSubstitutedVariables(folder, config) {
+    const file = config.source || config.program;
+    if (!file || !SRC_EXT.includes(path.extname(file).toLowerCase())) {
+      vscode.window.showErrorMessage('PRABHA Debug: "source" mein .c/.cpp file do (default: ${file}).');
+      return undefined;
+    }
+    const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === file);
+    if (doc && doc.isDirty) await doc.save();
+    stopProgram();
+    const r = await compileFile(file, 'debug');
+    if (!r) return undefined;                        // errors Problems tab mein — debug shuru nahi
+    const conf = cfg();
+    const gdb = toolchain.findGdb(r.tc);
+    const lldb = !gdb || process.platform === 'darwin' ? toolchain.findLldbDap() : null;
+    const backend = process.platform === 'darwin' ? (lldb ? 'lldb' : gdb ? 'gdb' : null) : (gdb ? 'gdb' : lldb ? 'lldb' : null);
+    if (!backend) {
+      cleanup(r);
+      const h = toolchain.debuggerHint();
+      const pick = await vscode.window.showErrorMessage('PRABHA Debug: debugger nahi mila. ' + (h.command ? 'Ek command: ' + h.command : h.label), h.command ? 'Run in terminal' : 'Install PRABHA compiler');
+      if (pick === 'Run in terminal') { const t = vscode.window.createTerminal({ name: 'PRABHA · debugger install' }); t.show(); t.sendText(h.command); }
+      if (pick === 'Install PRABHA compiler') installCompiler(true);
+      return undefined;
+    }
+    if (r.usesPanel) out.appendLine('\n[PRABHA] graphics.h program debug ho raha hai: steps, variables, breakpoints sab chalenge — par 640×480 screen sirf Ctrl+F9 (Run) mein dikhti hai.');
+    const env = { ...r.tc.env, PRABHA_PROTO_FD: 'off' };
+    const consoleMode = config.console || conf.debugConsole;
+    if (backend === 'lldb') {
+      // Apple/LLVM ka lldb-dap — uski apni launch config
+      return {
+        ...config, backend, lldbDap: lldb, program: r.bin, cwd: config.cwd || path.dirname(file),
+        stopOnEntry: !!config.stopAtEntry, runInTerminal: consoleMode === 'integratedTerminal',
+        env: Object.entries({ PRABHA_PROTO_FD: 'off' }).map(([k, v]) => k + '=' + v),
+        prabhaWork: r.work
+      };
+    }
+    return {
+      ...config, backend, gdbPath: gdb, program: r.bin, cwd: config.cwd || path.dirname(file),
+      console: consoleMode, env, sourceMap: r.sourceMap, prabhaWork: r.work
+    };
+  }
+};
+
+const debugAdapterFactory = {
+  createDebugAdapterDescriptor(session) {
+    const c = session.configuration;
+    if (c.backend === 'lldb') return new vscode.DebugAdapterExecutable(c.lldbDap, []);
+    return new vscode.DebugAdapterInlineImplementation(new GdbDebugSession());
+  }
+};
+
+/* ─────────────────────── Turbo → Modern panel ─────────────────────── */
+
+function enabledRules() { return [...engine.defaultEnabled(), ...modern.review]; }
+
+async function openModern(context, target) {
+  const editor = vscode.window.activeTextEditor;
+  const uri = target && target.fsPath ? target : editor && editor.document.uri;
+  if (!uri) { vscode.window.showInformationMessage('PRABHA: Turbo C/C++ file kholo, phir "Turbo → Modern" chalao.'); return; }
+  modern.uri = uri;
+  if (!modern.panel) {
+    modern.panel = vscode.window.createWebviewPanel('prabhaModern', 'PRABHA · Turbo → Modern', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
+      enableScripts: true, retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, 'media'))]
+    });
+    modern.panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'media', 'icon.png'));
+    modern.panel.webview.html = modernShell(modern.panel.webview, context);
+    modern.panel.onDidDispose(() => { modern.panel = null; modern.uri = null; });
+    modern.panel.webview.onDidReceiveMessage(m => onModernMessage(m));
+  } else {
+    modern.panel.reveal(vscode.ViewColumn.Beside, true);
+  }
+  modern.panel.title = 'Modern · ' + path.basename(uri.fsPath || uri.path);
+  renderModern();
+}
+
+async function modernDoc() { return modern.uri ? vscode.workspace.openTextDocument(modern.uri) : null; }
+
+function modernResult(doc) {
+  try { return engine.modernize(doc.getText(), { fileName: doc.fileName, enabled: enabledRules(), ui: modern.lang }); } catch (e) { out.appendLine('[modern] ' + e.message); return null; }
+}
+
+async function renderModern() {
+  if (!modern.panel) return;
+  const doc = await modernDoc();
+  if (!doc) return;
+  const res = modernResult(doc);
+  if (!res) return;
+  const text = doc.getText();
+  modern.panel.webview.postMessage({
+    t: 'render',
+    file: path.basename(doc.fileName),
+    diff: engine.diffLines(text, res.code),
+    changes: res.changes, available: res.available, warnings: res.warnings,
+    minJava: res.minJava, lang: modern.lang,
+    reviewRules: engine.RULES.filter(r => r.safety === 'review' && r.lang.includes(res.lang)).map(r => ({ id: r.id, on: modern.review.includes(r.id), title: explain(r.id, modern.lang).title }))
+  });
+}
+let modernTimer;
+function renderModernSoon() { clearTimeout(modernTimer); modernTimer = setTimeout(renderModern, 400); }
+
+async function onModernMessage(m) {
+  const doc = await modernDoc();
+  if (!doc) return;
+  switch (m.t) {
+    case 'ready': renderModern(); break;
+    case 'lang': modern.lang = m.lang === 'en' ? 'en' : 'hi'; renderModern(); break;
+    case 'toggleReview':
+      modern.review = m.on ? [...new Set([...modern.review, m.id])] : modern.review.filter(x => x !== m.id);
+      renderModern(); break;
+    case 'apply': {
+      const res = modernResult(doc);
+      if (!res || res.code === doc.getText()) return;
+      const pick = await vscode.window.showWarningMessage('PRABHA: ' + res.changes.length + ' badlaav file par lagaun? (Ctrl+Z se wapas ho jaayega)', 'Apply', 'Nayi tab mein');
+      if (pick === 'Nayi tab mein') return openModernNewTab(doc, res);
+      if (pick !== 'Apply') return;
+      const we = new vscode.WorkspaceEdit();
+      we.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), res.code);
+      await vscode.workspace.applyEdit(we);
+      renderModern();
+      break;
+    }
+    case 'newFile': { const res = modernResult(doc); if (res) await openModernNewTab(doc, res); break; }
+    case 'copy': {
+      const res = modernResult(doc);
+      if (res) { await vscode.env.clipboard.writeText(res.code); vscode.window.setStatusBarMessage('PRABHA: modern code copy ho gaya', 3000); }
+      break;
+    }
+    case 'check': {
+      const r = await sameOutputCheck(doc);
+      if (modern.panel) modern.panel.webview.postMessage({ t: 'check', ok: r.ok, text: r.text });
+      break;
+    }
+    case 'run': await runVersion(doc, m.which); break;
+  }
+}
+
+async function openModernNewTab(doc, res) {
+  const nd = await vscode.workspace.openTextDocument({ language: res.lang === 'c' ? 'c' : 'cpp', content: res.code });
+  await vscode.window.showTextDocument(nd, vscode.ViewColumn.One);
+}
+
+/** Purana / naya code temp folder mein likho (user ki file nahi chhedte) */
+function writeVersion(doc, which) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha-' + which + '-'));
+  const file = path.join(dir, path.basename(doc.fileName.match(/\.\w+$/) ? doc.fileName : doc.fileName + '.cpp'));
+  const res = modernResult(doc);
+  fs.writeFileSync(file, which === 'new' && res ? res.code : doc.getText(), 'utf8');
+  return { file, dir };
+}
+
+/** "Purana chalao" (Turbo mode) / "Naya chalao" (strict C++17 / C11) — PRABHA Console mein */
+async function runVersion(doc, which) {
+  const v = writeVersion(doc, which);
+  const r = await compileFile(v.file, 'run', which === 'new' ? { strict: true, diagUri: undefined } : { legacyCompat: true });
+  if (!r) { out.show(true); return; }
+  runConsole(r, v.file, which === 'new' ? 'PRABHA Console · modern' : 'PRABHA Console · turbo');
+}
+
+/**
+ * Proof ki badlaav ne program ka matlab nahi badla:
+ * purana Turbo mode mein + naya strict standard mein compile → same input → output match.
+ */
+async function sameOutputCheck(doc) {
+  const isCpp = !/\.c$/i.test(doc.fileName);
+  const tc = await ensureToolchain(isCpp);
+  if (!tc) return { ok: false, text: 'Compiler nahi mila.' };
+  const rt = path.join(extRoot, 'runtime');
+  const oldV = writeVersion(doc, 'old'), newV = writeVersion(doc, 'new');
+  const stdinFile = doc.fileName.replace(/\.\w+$/, '') + '.stdin';
+  const input = fs.existsSync(stdinFile) ? fs.readFileSync(stdinFile, 'utf8') : '';
+  const lines = [];
+  try {
+    const a = await build(oldV.file, { tc, runtimeDir: rt, legacyCompat: true });
+    const b = await build(newV.file, { tc, runtimeDir: rt, strict: true });
+    lines.push((a.ok ? '✓' : '✖') + ' purana code (Turbo mode) compile ' + (a.ok ? 'hua' : 'nahi hua'));
+    lines.push((b.ok ? '✓' : '✖') + ' naya code strict ' + (isCpp ? 'C++17' : 'C11') + ' -pedantic-errors mein compile ' + (b.ok ? 'hua' : 'nahi hua'));
+    if (!b.ok) lines.push(b.log.split('\n').slice(0, 8).join('\n'));
+    // conio.h programs ka text output bhi stdout par aata hai (protocol off) — compare ho sakta hai.
+    // Sirf graphics.h ka output screen par hai.
+    const graphics = /^\s*#\s*include\s*[<"]graphics\.h[>"]/m.test(doc.getText());
+    if (a.ok && b.ok && !graphics) {
+      const run = bin => cp.spawnSync(bin, [], { input, encoding: 'utf8', timeout: 8000, env: { ...tc.env, PRABHA_PROTO_FD: 'off' } });
+      const pa = run(a.bin), pb = run(b.bin);
+      const same = pa.stdout === pb.stdout && pa.status === pb.status;
+      lines.push((same ? '✓ Dono ka output bilkul same hai' : '✖ Output alag hai') + (input ? ' (input: ' + path.basename(stdinFile) + ')' : ' (bina input ke; input file chahiye to "' + path.basename(stdinFile) + '" bana do)'));
+      if (!same) lines.push('--- purana ---\n' + String(pa.stdout).slice(0, 600) + '\n--- naya ---\n' + String(pb.stdout).slice(0, 600));
+      cleanup(a); cleanup(b);
+      return { ok: same, text: lines.join('\n') };
+    }
+    if (graphics) lines.push('ℹ graphics.h program — output screen par hai, isliye sirf compile check kiya.');
+    cleanup(a); cleanup(b);
+    return { ok: a.ok && b.ok, text: lines.join('\n') };
+  } finally {
+    for (const v of [oldV, newV]) { try { fs.rmSync(v.dir, { recursive: true, force: true }); } catch { /* */ } }
+  }
+}
+
+function modernShell(webview, context) {
+  const media = p => webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'media', p)));
+  const nonce = [...Array(24)].map(() => Math.random().toString(36)[2]).join('');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="${media('modern-panel.css')}">
+<title>PRABHA · Turbo → Modern</title></head>
+<body><div id="app"><p class="muted">Loading…</p></div>
+<script nonce="${nonce}" src="${media('modern-panel.js')}"></script></body></html>`;
+}
+
+/* ───────────────────────── examples ───────────────────────── */
+
 async function openExample(context) {
   const dir = path.join(context.extensionPath, 'examples');
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.c') || f.endsWith('.cpp'));
-  const pick = await vscode.window.showQuickPick(files, { placeHolder: 'Open a PRABHA example' });
+  const files = fs.readdirSync(dir).filter(f => SRC_EXT.includes(path.extname(f)));
+  const pick = await vscode.window.showQuickPick(files, { placeHolder: 'PRABHA example kholo' });
   if (!pick) return;
   const doc = await vscode.workspace.openTextDocument(path.join(dir, pick));
   await vscode.window.showTextDocument(doc);
 }
 
-function deactivate() { stopProgram(); }
+function deactivate() { stopProgram(); if (con) { try { con.term.dispose(); } catch { /* */ } } }
 
-module.exports = { activate, deactivate };
+// _diag/_out sirf tests ke liye (tests/extension-test.js)
+module.exports = { activate, deactivate, _diag: () => diag, _out: () => out };

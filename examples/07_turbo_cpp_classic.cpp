@@ -5,7 +5,7 @@
  * clrscr() and getch(). None of this compiles on a modern g++ by itself.
  * PRABHA's Turbo C++ compatibility (on by default) runs it unchanged.
  *
- * Run it:  Ctrl+Alt+G
+ * Run it:  Ctrl+F9
  */
 #include <iostream.h>
 #include <conio.h>

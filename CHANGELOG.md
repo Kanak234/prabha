@@ -1,5 +1,46 @@
 # Changelog
 
+## 6.0.0 — 2026-10-12
+
+PRABHA becomes a full Turbo C++ / Dev-C++ style IDE inside VS Code
+(the planned 5.1, 5.2 and 6.0 in one release).
+
+### Added
+
+- **PRABHA's own compiler on every OS.** Windows: GCC 16.2 with gdb (as before).
+  Linux and macOS: Zig 0.17.0 (clang + libc + libc++), downloaded once with its
+  SHA-256 checked from ziglang.org's index. New setting `prabha.toolchain`
+  (auto / bundled / system).
+- **Ctrl+F9 / Alt+F9.** Ctrl+F9 compiles and runs; Alt+F9 only compiles.
+- **PRABHA Console.** Console programs run in a VS Code terminal with input echo
+  and backspace, prompts shown before input (unbuffered stdout),
+  *Process exited after X s with return value N* and *Press any key to close*.
+  Ctrl+C stops, Ctrl+D / Ctrl+Z ends input. Optional `prabha.runTimeoutSeconds`.
+- **Clickable errors with Hinglish tips** in the Problems tab, mapped back to your
+  own file and line even when Turbo mode compiled a temporary copy. Linker errors
+  (`undefined reference`) land on your file too. A Dev-C++ style
+  *Compilation results: Errors / Warnings* line is shown in the output.
+- **Crash explanations** for segmentation fault, divide by zero, abort, stack
+  overflow, bus error, illegal instruction and killed programs — Linux/macOS
+  signals and Windows NTSTATUS codes.
+- **Debugger (F5).** Breakpoints (with conditions), step into/over/out (F7/F8, and
+  F4 run to cursor), call stack, locals, structs, arrays, watch, set variable,
+  pause, and crash stops on the faulting line with the Hinglish reason. Linux and
+  Windows use PRABHA's own gdb adapter; macOS uses Apple's `lldb-dap`. No
+  `launch.json` needed; `"type": "prabha"` configurations are supported.
+- **Turbo C++ → Modern C++ panel**: side-by-side old/new code, why each change
+  was made, the common mistake, a quiz, Hinglish/English, apply to file or open in
+  a new tab, run either version, and a **same-output check** (old in Turbo mode
+  vs new with strict `-std=c++17 -pedantic-errors` / `-std=c11`).
+
+### Fixed
+
+- Turbo mode no longer rewrites `void main()` that appears inside strings or
+  comments, now also handles implicit-int `main()`, `return;` inside main, and
+  `far` / `near` / `huge` pointers, and applies to C files as well as C++.
+- clang (macOS) rejected Turbo programs with `return;` in `main`; now adapted.
+
+
 ## 5.0.1 — 2026-10-12
 
 ### Fixed

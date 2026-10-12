@@ -27,7 +27,7 @@ if (!which(CC) || (!native && !(fs.existsSync(WINE) || which('wine')))) {
   console.log('windows-sim: skipped (needs ' + (native ? 'gcc' : 'mingw-w64 + wine') + ')');
   process.exit(77);
 }
-const env = { ...process.env, WINEDEBUG: '-all', WINEPREFIX: process.env.WINEPREFIX || path.join(os.tmpdir(), 'prabha-wine') };
+const env = { ...process.env, WINEDEBUG: '-all', WINEDLLOVERRIDES: 'winedbg.exe=d', WINEPREFIX: process.env.WINEPREFIX || path.join(os.tmpdir(), 'prabha-wine') };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha-win-'));
 let pass = 0, fail = 0;
 const ok = (c, n, x) => { if (c) { pass++; console.log('  ok   ' + n); } else { fail++; console.log('  FAIL ' + n + (x ? '\n       ' + x : '')); } };
@@ -103,6 +103,41 @@ int main(void){
     ok(sawInit && frames >= 1, 'init + frames arrive over stdout (' + frames + ' frames)');
     ok(/Press keys:/.test(text) && /got 75 0 77 13/.test(text), 'printf text reaches Output intact', JSON.stringify(text));
     ok(!/##PRABHA##|"t":"frame"/.test(text), 'no protocol fragments leak into Output', JSON.stringify(text.slice(0, 200)));
+  }
+
+  // 4) PRABHA 6.0: asli build path (lib/build.js — Turbo mode, -static) + PRABHA Console
+  //    + Windows crash codes (0xC0000005 / 0xC0000094) ki Hinglish wajah
+  console.log('\n[windows] PRABHA 6.0 build + console + crash');
+  {
+    const { build, cleanup } = require('../lib/build');
+    const { ConsoleSession } = require('../lib/console-core');
+    const tc = { cc: CC, cxx: CXX, ccArgs: [], cxxArgs: [], version: 'gcc (MinGW-W64)', env: process.env, mingw: true };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prabha win परीक्षा '));
+    const runConsole = (bin, input) => new Promise(res => {
+      let shown = '';
+      const s = new ConsoleSession({
+        write: t => { shown += t; }, close: () => {}, platform: 'win32', cwd: dir, env,
+        spawn: native ? undefined : (cmd, args, o) => cp.spawn(WINE, [cmd, ...args], { ...o, env }),
+        onDone: r => res({ shown, r })
+      }).start(bin);
+      if (input) setTimeout(() => s.input(input), 1500);
+    });
+    const progs = {
+      'turbo.cpp': ['#include <iostream.h>\n#include <conio.h>\nvoid main()\n{\n  int a, b;\n  cout << "Enter a b: ";\n  cin >> a >> b;\n  cout << "Sum = " << a + b << endl;\n}\n', '20 22\r', /Enter a b: [\s\S]*Sum = 42[\s\S]*return value 0/],
+      'crash.c': ['#include <stdio.h>\nint main(void){ int *p = 0; printf("start\\n"); *p = 1; return 0; }\n', '', native ? /NULL|pointer|memory/i : /NULL|pointer|memory|page fault/i],   // Wine crash par exit 5 deta hai (debugger) — asli Windows CI par 0xC0000005
+      'divide.c': ['#include <stdio.h>\nint main(void){ volatile int z = 0; printf("%d\\n", 10 / z); return 0; }\n', '', /zero|0 se|divide/i]
+    };
+    for (const [name, [src, input, expect]] of Object.entries(progs)) {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, src);
+      const r = await build(f, { tc, runtimeDir: path.join(root, 'runtime') });
+      ok(r.ok, name + ': lib/build.js compiles for Windows (Turbo mode, -static)', r.log);
+      if (!r.ok) continue;
+      const res = await Promise.race([runConsole(r.bin, input), new Promise(x => setTimeout(() => x({ shown: 'TIMEOUT', r: {} }), 60000))]);
+      ok(expect.test(res.shown), name + ': console output / crash explanation', JSON.stringify(res.shown.slice(-400)) + ' code=' + res.r.code);
+      cleanup(r);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });

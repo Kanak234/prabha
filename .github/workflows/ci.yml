@@ -1,7 +1,9 @@
-# CI — PRABHA har push par Windows, Linux aur macOS teeno par test hota hai.
-#  Linux/macOS: runtime + saare examples compile, protocol (fd 3) integration, frame decode
-#  Windows:     runtime + examples MinGW se compile, stdout protocol + getch (Enter/arrow) test
-#  Sab par:     toolchain detect, stdout router, extension wiring (mock VS Code)
+# CI — PRABHA 6.0 har push par Windows, Linux aur macOS teeno par test hota hai.
+#  Linux/macOS: runtime + examples, protocol (fd 3), frame decode, PRABHA ka apna Zig
+#               compiler asli download + SHA-256 + build-test
+#  Windows:     MinGW build, stdout protocol + getch, console + crash codes
+#  Sab par:     IDE (errors/tips/console/crash), build, Turbo → Modern (same output),
+#               debugger (Linux/Windows gdb, macOS lldb-dap), extension wiring (mock VS Code)
 name: CI
 
 on:
@@ -60,9 +62,38 @@ jobs:
             exit 1
           fi
 
-      - name: Windows runtime test (stdout protocol, getch, examples)
+      - name: Windows runtime test (stdout protocol, getch, examples, console, crash codes)
         if: runner.os == 'Windows'
         run: node tests/windows-sim.js
+
+      - name: Install gdb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gdb clang
+
+      - name: IDE core (errors + Hinglish tips, console, crash text)
+        run: node tests/ide-test.js
+
+      - name: Build pipeline (Turbo mode, panel, debug build, strict)
+        run: node tests/build-test.js
+
+      - name: Turbo → Modern converter (same output check)
+        run: node tests/modern-test.js
+
+      - name: Turbo → Modern + build with clang (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PRABHA_TEST_CC: clang
+          PRABHA_TEST_CXX: clang++
+        run: node tests/ide-test.js && node tests/build-test.js && node tests/modern-test.js
+
+      - name: Debugger (gdb on Linux/Windows, lldb-dap on macOS)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then node tests/debug-test.js lldb; else node tests/debug-test.js gdb; fi
+
+      - name: PRABHA's own compiler — real Zig download + verify + build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: node tests/zig-install-test.js
 
       - name: Router + toolchain + extension wiring
         run: node tests/extension-test.js
@@ -70,7 +101,7 @@ jobs:
       - name: Validate JavaScript syntax
         shell: bash
         run: |
-          for f in extension.js lib/*.js tests/*.js; do node --check "$f"; done
+          for f in extension.js lib/*.js lib/*/*.js media/*.js tests/*.js; do node --check "$f"; done
 
       - name: Package .vsix
         if: runner.os == 'Linux'

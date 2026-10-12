@@ -1,8 +1,8 @@
 {
   "name": "prabha",
-  "displayName": "PRABHA — Turbo C graphics.h in VS Code",
-  "description": "Run classic Turbo C/C++ graphics.h and conio.h programs inside VS Code — complete BGI runtime, 640x480 16-colour VGA panel, real getch/kbhit keyboard, no DOSBox. Now with an in-built compiler: no gcc? PRABHA installs one in one click.",
-  "version": "5.0.1",
+  "displayName": "PRABHA — Turbo C++ IDE in VS Code (compiler, debugger, graphics.h)",
+  "description": "Dev-C++ / Turbo C++ as a VS Code extension IDE: own compiler on Windows, Linux and macOS, Ctrl+F9 run console with \"Press any key\", clickable errors with Hinglish tips, crash explanations, F5 debugger (F7/F8 steps), graphics.h + conio.h 640x480 panel, and Turbo C++ → Modern C++ converter that explains every change.",
+  "version": "6.0.0",
   "publisher": "KANAKPRABHAKAR",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -11,21 +11,26 @@
   },
   "categories": [
     "Programming Languages",
+    "Debuggers",
     "Education",
     "Other"
   ],
   "keywords": [
-    "bgi",
-    "borland",
-    "compiler",
-    "conio.h",
-    "dos",
-    "gcc",
-    "graphics",
-    "graphics.h",
-    "mingw",
     "turbo c",
-    "windows"
+    "turbo c++",
+    "dev-c++",
+    "graphics.h",
+    "conio.h",
+    "bgi",
+    "compiler",
+    "debugger",
+    "gdb",
+    "c++",
+    "modern c++",
+    "hinglish",
+    "education",
+    "mingw",
+    "zig"
   ],
   "repository": {
     "type": "git",
@@ -34,14 +39,31 @@
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:c",
-    "onLanguage:cpp"
+    "onLanguage:cpp",
+    "onDebugResolve:prabha",
+    "onDebugInitialConfigurations"
   ],
   "contributes": {
     "commands": [
       {
         "command": "prabha.run",
-        "title": "PRABHA: Run graphics.h Program",
+        "title": "PRABHA: Run (Ctrl+F9)",
         "icon": "$(play)"
+      },
+      {
+        "command": "prabha.compile",
+        "title": "PRABHA: Compile (Alt+F9)",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "prabha.debug",
+        "title": "PRABHA: Debug (F5)",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "prabha.modernize",
+        "title": "PRABHA: Turbo C++ → Modern C++ (explain changes)",
+        "icon": "$(sparkle)"
       },
       {
         "command": "prabha.stop",
@@ -49,7 +71,7 @@
       },
       {
         "command": "prabha.showOutput",
-        "title": "PRABHA: Show Program Output"
+        "title": "PRABHA: Show Output"
       },
       {
         "command": "prabha.openExample",
@@ -68,24 +90,108 @@
       "editor/title/run": [
         {
           "command": "prabha.run",
-          "when": "resourceExtname == .c || resourceExtname == .cpp",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
           "group": "navigation@1"
+        },
+        {
+          "command": "prabha.debug",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "prabha.modernize",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "navigation@9"
         }
       ],
       "editor/context": [
         {
           "command": "prabha.run",
-          "when": "resourceExtname == .c || resourceExtname == .cpp",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
           "group": "prabha@1"
+        },
+        {
+          "command": "prabha.compile",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "prabha@2"
+        },
+        {
+          "command": "prabha.debug",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "prabha@3"
+        },
+        {
+          "command": "prabha.modernize",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "prabha@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "prabha.run",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "prabha@1"
+        },
+        {
+          "command": "prabha.modernize",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "group": "prabha@2"
         }
       ]
     },
     "keybindings": [
       {
         "command": "prabha.run",
+        "key": "ctrl+f9",
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/"
+      },
+      {
+        "command": "prabha.compile",
+        "key": "alt+f9",
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/"
+      },
+      {
+        "command": "prabha.run",
         "key": "ctrl+alt+g",
         "mac": "cmd+alt+g",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "prabha.debug",
+        "key": "f5",
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode && config.prabha.useF5ForDebug"
+      },
+      {
+        "command": "workbench.action.debug.stepInto",
+        "key": "f7",
+        "when": "inDebugMode && debugType == 'prabha'"
+      },
+      {
+        "command": "workbench.action.debug.stepOver",
+        "key": "f8",
+        "when": "inDebugMode && debugType == 'prabha'"
+      },
+      {
+        "command": "editor.debug.action.runToCursor",
+        "key": "f4",
+        "when": "inDebugMode && debugType == 'prabha' && editorTextFocus"
+      },
+      {
+        "command": "workbench.action.debug.stop",
+        "key": "ctrl+f2",
+        "when": "inDebugMode && debugType == 'prabha'"
+      },
+      {
+        "command": "prabha.stop",
+        "key": "ctrl+f2",
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode"
+      },
+      {
+        "command": "editor.debug.action.selectionToWatch",
+        "key": "ctrl+f7",
+        "when": "inDebugMode && debugType == 'prabha' && editorTextFocus"
       }
     ],
     "configuration": {
@@ -94,7 +200,7 @@
         "prabha.cCompiler": {
           "type": "string",
           "default": "gcc",
-          "description": "C compiler for .c files and the PRABHA runtime. Leave as 'gcc' to auto-detect (PATH, CodeBlocks/MSYS2/TDM/WinGet folders, or PRABHA's own GCC)."
+          "description": "C compiler. Leave as 'gcc' to auto-detect (PATH, CodeBlocks/MSYS2/TDM/WinGet folders, or PRABHA's own compiler)."
         },
         "prabha.cppCompiler": {
           "type": "string",
@@ -125,8 +231,134 @@
           "type": "string",
           "default": "",
           "description": "Windows only: download URL of a WinLibs GCC .zip to use instead of the pinned version (advanced; no checksum check for custom URLs)."
+        },
+        "prabha.toolchain": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "bundled",
+            "system"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Use a compiler already on this computer; if none, PRABHA installs its own.",
+            "Always use PRABHA's own compiler (Windows: GCC + gdb, Linux/macOS: Zig clang).",
+            "Only use compilers already installed on this computer."
+          ],
+          "markdownDescription": "Which compiler PRABHA uses. **auto** (default) = your gcc/clang if installed, else PRABHA's own. Run **PRABHA: Install / Choose Compiler** to download PRABHA's compiler (one time, checksum-verified)."
+        },
+        "prabha.runIn": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "console",
+            "panel"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "graphics.h / conio.h → 640×480 panel, everything else → PRABHA Console.",
+            "Always PRABHA Console.",
+            "Always the 640×480 panel."
+          ],
+          "description": "Where Ctrl+F9 runs your program."
+        },
+        "prabha.runTimeoutSeconds": {
+          "type": "number",
+          "default": 0,
+          "description": "Stop a console program after this many seconds (0 = never). Handy for catching infinite loops."
+        },
+        "prabha.useF5ForDebug": {
+          "type": "boolean",
+          "default": true,
+          "description": "F5 in a C/C++ file starts the PRABHA debugger (no launch.json needed). Turn off if you use another C/C++ debugger."
+        },
+        "prabha.debugConsole": {
+          "type": "string",
+          "enum": [
+            "integratedTerminal",
+            "internal",
+            "externalTerminal"
+          ],
+          "default": "integratedTerminal",
+          "description": "Where a debugged program reads input / prints output."
         }
       }
-    }
+    },
+    "breakpoints": [
+      {
+        "language": "c"
+      },
+      {
+        "language": "cpp"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "prabha",
+        "label": "PRABHA (Turbo C/C++ debugger)",
+        "languages": [
+          "c",
+          "cpp"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "default": "${file}",
+                "description": "C/C++ source file to compile with -g -O0 and debug."
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${fileDirname}",
+                "description": "Working directory of the program."
+              },
+              "stopAtEntry": {
+                "type": "boolean",
+                "default": false,
+                "description": "Stop at the first line of main()."
+              },
+              "console": {
+                "type": "string",
+                "enum": [
+                  "integratedTerminal",
+                  "internal",
+                  "externalTerminal"
+                ],
+                "default": "integratedTerminal",
+                "description": "Where the program reads input / prints output. internal = Debug Console (no keyboard input)."
+              },
+              "stdinFile": {
+                "type": "string",
+                "description": "(internal console only) file fed to the program as standard input."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "prabha",
+            "request": "launch",
+            "name": "PRABHA: Debug current file",
+            "source": "${file}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "PRABHA: Debug current file",
+            "description": "Compile with -g and debug (gdb / lldb)",
+            "body": {
+              "type": "prabha",
+              "request": "launch",
+              "name": "PRABHA: Debug current file",
+              "source": "^\"\\${file}\""
+            }
+          }
+        ]
+      }
+    ]
   }
 }

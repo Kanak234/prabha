@@ -2,3 +2,4 @@ tests/**
 .gitignore
 **/*.o
 .github/**
+docs/**
