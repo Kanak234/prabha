@@ -31,23 +31,30 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const toolchain = require('./lib/toolchain');
-const { createRouter } = require('./lib/stream');
 const { build, cleanup, usesPanel } = require('./lib/build');
 const { ConsoleSession } = require('./lib/console-core');
-const { explainExit, exitLine } = require('./lib/crash');
 const { GdbDebugSession } = require('./lib/debug/gdb-adapter');
-const engine = require('./lib/modern/engine');
-const { explain } = require('./lib/modern/explain');
 
-const VERSION = '6.0.1';
-const SRC_EXT = ['.c', '.cpp', '.cc', '.cxx'];
+// Import shared web-compatible core (Turbo→Modern, diagnostics, crash, stream)
+const {
+  VERSION,
+  SRC_EXT,
+  createRouter,
+  explainExit,
+  exitLine,
+  engine,
+  explain,
+  modernState,  // shared state: panel, uri, lang, review
+  modern: { openModern, renderModern, onModernMessage, renderModernSoon, modernDoc, modernResult }
+} = require('./lib/web-core');
+
+const modern = modernState;
 
 let extRoot, storageDir;
 let out, status, diag;
 let cachedTc;                 // last detected toolchain
 let panel, child;             // graphics panel + uska program
 let con = null;               // { term, session, result } — PRABHA Console
-const modern = { panel: null, uri: null, lang: 'en', review: [] };
 
 /* ───────────────────────────── activate ───────────────────────────── */
 
@@ -65,7 +72,7 @@ function activate(context) {
     cmd('prabha.compile', target => compileOnly(target)),
     cmd('prabha.stop', () => stopProgram('stopped from the command')),
     cmd('prabha.debug', target => startDebug(target)),
-    cmd('prabha.modernize', target => openModern(context, target)),
+    cmd('prabha.modernize', target => openModern(context, target, onModernMessageDesktop)),
     cmd('prabha.showOutput', () => out.show(true)),
     cmd('prabha.openExample', () => openExample(context)),
     cmd('prabha.installCompiler', () => installCompiler(true)),
@@ -666,79 +673,12 @@ const debugAdapterFactory = {
 
 function enabledRules() { return [...engine.defaultEnabled(), ...modern.review]; }
 
-async function openModern(context, target) {
-  const editor = vscode.window.activeTextEditor;
-  const uri = target && target.fsPath ? target : editor && editor.document.uri;
-  if (!uri) { vscode.window.showInformationMessage('PRABHA: open a Turbo C/C++ file, then run "Turbo → Modern".'); return; }
-  modern.uri = uri;
-  if (!modern.panel) {
-    modern.panel = vscode.window.createWebviewPanel('prabhaModern', 'PRABHA · Turbo → Modern', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
-      enableScripts: true, retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, 'media'))]
-    });
-    modern.panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'media', 'icon.png'));
-    modern.panel.webview.html = modernShell(modern.panel.webview, context);
-    modern.panel.onDidDispose(() => { modern.panel = null; modern.uri = null; });
-    modern.panel.webview.onDidReceiveMessage(m => onModernMessage(m));
-  } else {
-    modern.panel.reveal(vscode.ViewColumn.Beside, true);
-  }
-  modern.panel.title = 'Modern · ' + path.basename(uri.fsPath || uri.path);
-  renderModern();
-}
-
-async function modernDoc() { return modern.uri ? vscode.workspace.openTextDocument(modern.uri) : null; }
-
-function modernResult(doc) {
-  try { return engine.modernize(doc.getText(), { fileName: doc.fileName, enabled: enabledRules(), ui: modern.lang }); } catch (e) { out.appendLine('[modern] ' + e.message); return null; }
-}
-
-async function renderModern() {
-  if (!modern.panel) return;
-  const doc = await modernDoc();
-  if (!doc) return;
-  const res = modernResult(doc);
-  if (!res) return;
-  const text = doc.getText();
-  modern.panel.webview.postMessage({
-    t: 'render',
-    file: path.basename(doc.fileName),
-    diff: engine.diffLines(text, res.code),
-    changes: res.changes, available: res.available, warnings: res.warnings,
-    minJava: res.minJava, lang: modern.lang,
-    reviewRules: engine.RULES.filter(r => r.safety === 'review' && r.lang.includes(res.lang)).map(r => ({ id: r.id, on: modern.review.includes(r.id), title: explain(r.id, modern.lang).title }))
-  });
-}
-let modernTimer;
-function renderModernSoon() { clearTimeout(modernTimer); modernTimer = setTimeout(renderModern, 400); }
-
-async function onModernMessage(m) {
+// openModern, renderModern, onModernMessage are imported from web-core.js
+// Desktop-specific handlers for 'check' and 'run' messages:
+async function onModernMessageDesktop(m) {
   const doc = await modernDoc();
   if (!doc) return;
   switch (m.t) {
-    case 'ready': renderModern(); break;
-    case 'lang': modern.lang = m.lang === 'hi' ? 'hi' : 'en'; renderModern(); break;
-    case 'toggleReview':
-      modern.review = m.on ? [...new Set([...modern.review, m.id])] : modern.review.filter(x => x !== m.id);
-      renderModern(); break;
-    case 'apply': {
-      const res = modernResult(doc);
-      if (!res || res.code === doc.getText()) return;
-      const pick = await vscode.window.showWarningMessage('PRABHA: apply ' + res.changes.length + ' change(s) to the file? (Ctrl+Z undoes it)', 'Apply', 'Open in new tab');
-      if (pick === 'Open in new tab') return openModernNewTab(doc, res);
-      if (pick !== 'Apply') return;
-      const we = new vscode.WorkspaceEdit();
-      we.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), res.code);
-      await vscode.workspace.applyEdit(we);
-      renderModern();
-      break;
-    }
-    case 'newFile': { const res = modernResult(doc); if (res) await openModernNewTab(doc, res); break; }
-    case 'copy': {
-      const res = modernResult(doc);
-      if (res) { await vscode.env.clipboard.writeText(res.code); vscode.window.setStatusBarMessage('PRABHA: modern code copied', 3000); }
-      break;
-    }
     case 'check': {
       const r = await sameOutputCheck(doc);
       if (modern.panel) modern.panel.webview.postMessage({ t: 'check', ok: r.ok, text: r.text });
@@ -746,6 +686,12 @@ async function onModernMessage(m) {
     }
     case 'run': await runVersion(doc, m.which); break;
   }
+}
+
+// Combine web-core handler with desktop-specific handlers
+async function onModernMessageCombined(m) {
+  await onModernMessage(m);  // from web-core.js
+  await onModernMessageDesktop(m);
 }
 
 async function openModernNewTab(doc, res) {

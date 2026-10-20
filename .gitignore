@@ -14,3 +14,6 @@ build/
 *.pt
 *.safetensors
 *.vsix
+
+.vscode-test-web/
+out/

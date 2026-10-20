@@ -35,7 +35,11 @@
     "type": "git",
     "url": "https://github.com/Kanak234/prabha"
   },
+  "scripts": {
+    "compile:web": "esbuild src/web/extension.js --bundle --platform=browser --format=cjs --external:vscode --outfile=dist/web/extension.js"
+  },
   "main": "./extension.js",
+  "browser": "./dist/web/extension.js",
   "activationEvents": [
     "onLanguage:c",
     "onLanguage:cpp",
@@ -47,17 +51,20 @@
       {
         "command": "prabha.run",
         "title": "PRABHA: Run (Ctrl+F9)",
-        "icon": "$(play)"
+        "icon": "$(play)",
+        "when": "!isWeb"
       },
       {
         "command": "prabha.compile",
         "title": "PRABHA: Compile (Alt+F9)",
-        "icon": "$(gear)"
+        "icon": "$(gear)",
+        "when": "!isWeb"
       },
       {
         "command": "prabha.debug",
         "title": "PRABHA: Debug (F5)",
-        "icon": "$(debug-alt)"
+        "icon": "$(debug-alt)",
+        "when": "!isWeb"
       },
       {
         "command": "prabha.modernize",
@@ -66,7 +73,8 @@
       },
       {
         "command": "prabha.stop",
-        "title": "PRABHA: Stop Program"
+        "title": "PRABHA: Stop Program",
+        "when": "!isWeb"
       },
       {
         "command": "prabha.showOutput",
@@ -78,23 +86,25 @@
       },
       {
         "command": "prabha.installCompiler",
-        "title": "PRABHA: Install / Choose Compiler"
+        "title": "PRABHA: Install / Choose Compiler",
+        "when": "!isWeb"
       },
       {
         "command": "prabha.compilerInfo",
-        "title": "PRABHA: Which compiler am I using?"
+        "title": "PRABHA: Which compiler am I using?",
+        "when": "!isWeb"
       }
     ],
     "menus": {
       "editor/title/run": [
         {
           "command": "prabha.run",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "navigation@1"
         },
         {
           "command": "prabha.debug",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "navigation@2"
         }
       ],
@@ -108,17 +118,17 @@
       "editor/context": [
         {
           "command": "prabha.run",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "prabha@1"
         },
         {
           "command": "prabha.compile",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "prabha@2"
         },
         {
           "command": "prabha.debug",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "prabha@3"
         },
         {
@@ -130,7 +140,7 @@
       "explorer/context": [
         {
           "command": "prabha.run",
-          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/",
+          "when": "resourceExtname =~ /^\\.(c|cpp|cc|cxx)$/ && !isWeb",
           "group": "prabha@1"
         },
         {
@@ -144,23 +154,23 @@
       {
         "command": "prabha.run",
         "key": "ctrl+f9",
-        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/"
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !isWeb"
       },
       {
         "command": "prabha.compile",
         "key": "alt+f9",
-        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/"
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !isWeb"
       },
       {
         "command": "prabha.run",
         "key": "ctrl+alt+g",
         "mac": "cmd+alt+g",
-        "when": "editorTextFocus"
+        "when": "editorTextFocus && !isWeb"
       },
       {
         "command": "prabha.debug",
         "key": "f5",
-        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode && config.prabha.useF5ForDebug"
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode && config.prabha.useF5ForDebug && !isWeb"
       },
       {
         "command": "workbench.action.debug.stepInto",
@@ -185,7 +195,7 @@
       {
         "command": "prabha.stop",
         "key": "ctrl+f2",
-        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode"
+        "when": "editorTextFocus && editorLangId =~ /^(c|cpp)$/ && !inDebugMode && !isWeb"
       },
       {
         "command": "editor.debug.action.selectionToWatch",
@@ -359,5 +369,8 @@
         ]
       }
     ]
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }
