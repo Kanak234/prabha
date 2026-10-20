@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.0
+- Web support (vscode.dev): Turbo -> Modern converter, error explanations and examples now work in the browser.
+- Compile / Run / Debug stay desktop-only (they need a real C compiler); these commands are hidden on the web.
+
 ## 6.0.1 — 2026-10-13
 
 ### Changed

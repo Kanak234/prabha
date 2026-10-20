@@ -3,3 +3,11 @@ tests/**
 **/*.o
 .github/**
 docs/**
+out/**
+src/**
+esbuild-test-web.js
+HANDOFF*.md
+*.vsix
+.vscode-test-web/**
+**/*.map
+dist/web/activation-test.js
