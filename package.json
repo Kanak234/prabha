@@ -4,7 +4,7 @@
   "description": "Dev-C++ / Turbo C++ as a VS Code extension IDE: own compiler on Windows, Linux and macOS, Ctrl+F9 run console with \"Press any key\", clickable errors with plain-English tips, crash explanations, F5 debugger (F7/F8 steps), graphics.h + conio.h 640x480 panel, and Turbo C++ → Modern C++ converter that explains every change.",
   "version": "6.1.1",
   "publisher": "KANAKPRABHAKAR",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
